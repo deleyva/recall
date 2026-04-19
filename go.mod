@@ -1,11 +1,11 @@
 module github.com/deleyva/recall
 
-go 1.26
+go 1.25.0
 
 require (
 	github.com/gorilla/sessions v1.4.0
 	github.com/labstack/echo/v4 v4.15.1
-	github.com/open-spaced-repetition/go-fsrs/v4 v4.0.0-20260415025435-7ef182b5749d
+	github.com/open-spaced-repetition/go-fsrs/v3 v3.3.1
 	github.com/pressly/goose/v3 v3.27.0
 	golang.org/x/crypto v0.50.0
 	modernc.org/sqlite v1.49.1

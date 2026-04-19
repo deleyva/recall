@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/deleyva/recall/internal/models"
-	"github.com/open-spaced-repetition/go-fsrs/v4"
+	"github.com/open-spaced-repetition/go-fsrs/v3"
 )
 
 type Scheduler struct {

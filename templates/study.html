@@ -1,0 +1,20 @@
+{{define "study.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "content"}}
+<div class="max-w-2xl mx-auto">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-2xl font-bold">Study: {{.Deck.Name}}</h1>
+        <span class="text-gray-500">{{.DueCount}} cards due</span>
+    </div>
+
+    <div id="study-area">
+        {{if .Done}}
+            {{template "study_done_partial.html" .}}
+        {{else}}
+            {{template "study_card_partial.html" .}}
+        {{end}}
+    </div>
+</div>
+{{end}}

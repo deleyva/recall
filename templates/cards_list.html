@@ -1,0 +1,72 @@
+{{define "cards_list.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "content"}}
+<div class="flex justify-between items-center mb-6">
+    <div>
+        <h1 class="text-2xl font-bold">{{.Deck.Name}} — Cards</h1>
+        <p class="text-gray-500">{{.Total}} cards total</p>
+    </div>
+    <div class="flex gap-2">
+        <a href="/decks/{{.Deck.ID}}/cards/new" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">Add Card</a>
+        <label class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 cursor-pointer">
+            Import CSV
+            <form method="POST" action="/decks/{{.Deck.ID}}/import" enctype="multipart/form-data" class="hidden">
+                <input type="file" name="file" accept=".csv,.tsv" onchange="this.form.submit()">
+            </form>
+        </label>
+    </div>
+</div>
+
+{{if .Cards}}
+<div class="bg-white shadow rounded-lg overflow-hidden">
+    <table class="w-full">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-4 py-3 text-left text-sm font-medium text-gray-500">Front</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-gray-500">Back</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-gray-500">State</th>
+                <th class="px-4 py-3 text-right text-sm font-medium text-gray-500">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y">
+            {{range .Cards}}
+            <tr>
+                <td class="px-4 py-3 text-sm">{{.Front}}</td>
+                <td class="px-4 py-3 text-sm text-gray-600">{{.Back}}</td>
+                <td class="px-4 py-3 text-sm">
+                    {{if eq .State 0}}<span class="text-blue-500">New</span>
+                    {{else if eq .State 1}}<span class="text-green-500">Learning</span>
+                    {{else if eq .State 2}}<span class="text-indigo-500">Review</span>
+                    {{else}}<span class="text-red-500">Relearning</span>
+                    {{end}}
+                </td>
+                <td class="px-4 py-3 text-sm text-right">
+                    <a href="/decks/{{$.Deck.ID}}/cards/{{.ID}}/edit" class="text-indigo-600 hover:underline mr-2">Edit</a>
+                    <form method="POST" action="/decks/{{$.Deck.ID}}/cards/{{.ID}}/delete" class="inline" onsubmit="return confirm('Delete?')">
+                        <button type="submit" class="text-red-500 hover:underline">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+
+{{if gt .TotalPages 1}}
+<div class="flex justify-center gap-2 mt-4">
+    {{if gt .Page 1}}<a href="?page={{.Page | minus 1}}" class="px-3 py-1 bg-gray-200 rounded">Prev</a>{{end}}
+    <span class="px-3 py-1">Page {{.Page}} of {{.TotalPages}}</span>
+    {{if lt .Page .TotalPages}}<a href="?page={{.Page | plus 1}}" class="px-3 py-1 bg-gray-200 rounded">Next</a>{{end}}
+</div>
+{{end}}
+{{else}}
+<div class="text-center py-12 text-gray-500">
+    <p class="text-lg mb-2">No cards yet</p>
+    <p>Add cards manually or import a CSV file.</p>
+</div>
+{{end}}
+
+<a href="/decks/{{.Deck.ID}}" class="text-indigo-600 hover:underline mt-4 inline-block">&larr; Back to deck</a>
+{{end}}

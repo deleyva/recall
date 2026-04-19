@@ -1,0 +1,31 @@
+{{define "base"}}
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{if .Title}}{{.Title}} - {{end}}Recall</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body class="h-full">
+    {{if .Email}}
+    <nav class="bg-indigo-600 text-white">
+        <div class="max-w-5xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-2">
+            <a href="/" class="text-xl font-bold shrink-0">Recall</a>
+            <div class="flex items-center gap-3 text-sm sm:text-base">
+                <a href="/stats" class="hover:text-indigo-200">Stats</a>
+                <span class="text-indigo-200 hidden sm:inline">{{.Email}}</span>
+                <form action="/logout" method="POST" class="inline">
+                    <button type="submit" class="hover:text-indigo-200">Logout</button>
+                </form>
+            </div>
+        </div>
+    </nav>
+    {{end}}
+    <main class="max-w-5xl mx-auto px-4 py-8">
+        {{template "content" .}}
+    </main>
+</body>
+</html>
+{{end}}

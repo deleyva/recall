@@ -1,0 +1,15 @@
+{{define "study_card_partial.html"}}
+<div class="bg-white rounded-lg shadow-lg p-8 text-center">
+    <div class="mb-4 text-sm text-gray-400">{{.DueCount}} remaining</div>
+    <div class="text-xl font-medium mb-8 min-h-[100px] flex items-center justify-center">
+        {{.Card.Front}}
+    </div>
+    <button
+        hx-get="/decks/{{if .Deck}}{{.Deck.ID}}{{else}}{{.Card.DeckID}}{{end}}/study/{{.Card.ID}}/answer"
+        hx-target="#study-area"
+        hx-swap="innerHTML"
+        class="bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 text-lg">
+        Show Answer
+    </button>
+</div>
+{{end}}

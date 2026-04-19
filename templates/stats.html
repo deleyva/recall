@@ -1,0 +1,46 @@
+{{define "stats.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "content"}}
+<h1 class="text-2xl font-bold mb-6">Statistics</h1>
+
+<div class="grid grid-cols-3 gap-4 mb-8">
+    <div class="bg-white rounded-lg shadow p-6 text-center">
+        <div class="text-4xl font-bold text-indigo-600">{{.Stats.TotalCards}}</div>
+        <div class="text-gray-500 mt-1">Total Cards</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6 text-center">
+        <div class="text-4xl font-bold text-orange-500">{{.Stats.DueToday}}</div>
+        <div class="text-gray-500 mt-1">Due Today</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6 text-center">
+        <div class="text-4xl font-bold text-green-500">{{.Stats.Streak}}</div>
+        <div class="text-gray-500 mt-1">Day Streak</div>
+    </div>
+</div>
+
+{{if .History}}
+<h2 class="text-xl font-bold mb-4">Review History</h2>
+<div class="bg-white rounded-lg shadow overflow-hidden">
+    <table class="w-full">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-4 py-3 text-left text-sm font-medium text-gray-500">Date</th>
+                <th class="px-4 py-3 text-right text-sm font-medium text-gray-500">Reviews</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y">
+            {{range .History}}
+            <tr>
+                <td class="px-4 py-3 text-sm">{{.Date}}</td>
+                <td class="px-4 py-3 text-sm text-right font-medium">{{.Reviews}}</td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{end}}
+
+<a href="/" class="text-indigo-600 hover:underline mt-4 inline-block">&larr; Back to decks</a>
+{{end}}

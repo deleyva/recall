@@ -1,0 +1,23 @@
+{{define "deck_view.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "content"}}
+<div class="flex justify-between items-center mb-6">
+    <div>
+        <h1 class="text-2xl font-bold">{{.Deck.Name}}</h1>
+        {{if .Deck.Description}}<p class="text-gray-500">{{.Deck.Description}}</p>{{end}}
+    </div>
+    <div class="flex gap-2">
+        {{if gt .Deck.DueCount 0}}
+        <a href="/decks/{{.Deck.ID}}/study" class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600">Study ({{.Deck.DueCount}})</a>
+        {{end}}
+        <a href="/decks/{{.Deck.ID}}/cards" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">Cards</a>
+        <a href="/decks/{{.Deck.ID}}/edit" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300">Edit</a>
+        <form method="POST" action="/decks/{{.Deck.ID}}/delete" class="inline" onsubmit="return confirm('Delete this deck?')">
+            <button type="submit" class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600">Delete</button>
+        </form>
+    </div>
+</div>
+<a href="/" class="text-indigo-600 hover:underline">&larr; Back to decks</a>
+{{end}}

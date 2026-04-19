@@ -1,0 +1,354 @@
+package api
+
+import (
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/deleyva/recall/internal/handlers/middleware"
+	"github.com/deleyva/recall/internal/models"
+	"github.com/deleyva/recall/internal/scheduler"
+	"github.com/deleyva/recall/internal/services"
+	"github.com/labstack/echo/v4"
+)
+
+type Handler struct {
+	auth      *services.AuthService
+	decks     *services.DeckService
+	cards     *services.CardService
+	reviews   *services.ReviewService
+	scheduler *scheduler.Scheduler
+	authMw    *middleware.AuthMiddleware
+}
+
+func NewHandler(auth *services.AuthService, decks *services.DeckService, cards *services.CardService, reviews *services.ReviewService, sched *scheduler.Scheduler, authMw *middleware.AuthMiddleware) *Handler {
+	return &Handler{
+		auth:      auth,
+		decks:     decks,
+		cards:     cards,
+		reviews:   reviews,
+		scheduler: sched,
+		authMw:    authMw,
+	}
+}
+
+func (h *Handler) Register(c echo.Context) error {
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	if req.Email == "" || req.Password == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "email and password required"})
+	}
+	if len(req.Password) < 8 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "password must be at least 8 characters"})
+	}
+
+	user, err := h.auth.Register(req.Email, req.Password)
+	if err != nil {
+		return c.JSON(http.StatusConflict, map[string]string{"error": err.Error()})
+	}
+
+	// Create session
+	sess, _ := h.authMw.GetStore().Get(c.Request(), middleware.SessionName)
+	sess.Values[middleware.UserIDKey] = user.ID
+	sess.Values[middleware.EmailKey] = user.Email
+	sess.Save(c.Request(), c.Response())
+
+	return c.JSON(http.StatusCreated, user)
+}
+
+func (h *Handler) Login(c echo.Context) error {
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	user, err := h.auth.Login(req.Email, req.Password)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
+	}
+
+	sess, _ := h.authMw.GetStore().Get(c.Request(), middleware.SessionName)
+	sess.Values[middleware.UserIDKey] = user.ID
+	sess.Values[middleware.EmailKey] = user.Email
+	sess.Save(c.Request(), c.Response())
+
+	return c.JSON(http.StatusOK, user)
+}
+
+func (h *Handler) Logout(c echo.Context) error {
+	sess, _ := h.authMw.GetStore().Get(c.Request(), middleware.SessionName)
+	sess.Options.MaxAge = -1
+	sess.Save(c.Request(), c.Response())
+	return c.JSON(http.StatusOK, map[string]string{"message": "logged out"})
+}
+
+func (h *Handler) ListDecks(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	decks, err := h.decks.List(userID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if decks == nil {
+		decks = []models.Deck{}
+	}
+	return c.JSON(http.StatusOK, decks)
+}
+
+func (h *Handler) CreateDeck(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	var req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	deck, err := h.decks.Create(userID, req.Name, req.Description)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusCreated, deck)
+}
+
+func (h *Handler) GetDeck(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	deck, err := h.decks.Get(userID, c.Param("id"))
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "deck not found"})
+	}
+	return c.JSON(http.StatusOK, deck)
+}
+
+func (h *Handler) UpdateDeck(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	var req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	if err := h.decks.Update(userID, c.Param("id"), req.Name, req.Description); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "deck not found"})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"message": "updated"})
+}
+
+func (h *Handler) DeleteDeck(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	if err := h.decks.Delete(userID, c.Param("id")); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "deck not found"})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"message": "deleted"})
+}
+
+func (h *Handler) ListCards(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	deckID := c.Param("id")
+
+	if _, err := h.decks.Get(userID, deckID); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "deck not found"})
+	}
+
+	page, _ := strconv.Atoi(c.QueryParam("page"))
+	perPage, _ := strconv.Atoi(c.QueryParam("per_page"))
+
+	cards, total, err := h.cards.List(deckID, page, perPage)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"cards": cards,
+		"total": total,
+	})
+}
+
+func (h *Handler) CreateCard(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	deckID := c.Param("id")
+
+	if _, err := h.decks.Get(userID, deckID); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "deck not found"})
+	}
+
+	var req struct {
+		Front string `json:"front"`
+		Back  string `json:"back"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	card, err := h.cards.Create(deckID, req.Front, req.Back)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusCreated, card)
+}
+
+func (h *Handler) GetCard(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	card, err := h.cards.GetForUser(c.Param("id"), userID)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "card not found"})
+	}
+	return c.JSON(http.StatusOK, card)
+}
+
+func (h *Handler) UpdateCard(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	var req struct {
+		Front string `json:"front"`
+		Back  string `json:"back"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	if err := h.cards.UpdateForUser(c.Param("id"), userID, req.Front, req.Back); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "card not found"})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"message": "updated"})
+}
+
+func (h *Handler) DeleteCard(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	if err := h.cards.DeleteForUser(c.Param("id"), userID); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "card not found"})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"message": "deleted"})
+}
+
+func (h *Handler) GetStudyCard(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	deckID := c.Param("id")
+
+	if _, err := h.decks.Get(userID, deckID); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "deck not found"})
+	}
+
+	card, dueCount, err := h.reviews.GetNextDue(deckID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	if card == nil {
+		return c.JSON(http.StatusOK, map[string]interface{}{
+			"card":      nil,
+			"due_count": 0,
+		})
+	}
+
+	now := time.Now().UTC()
+	intervals := h.scheduler.PreviewIntervals(*card, now)
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"card":      card,
+		"due_count": dueCount,
+		"intervals": intervals,
+	})
+}
+
+func (h *Handler) SubmitStudyReview(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	deckID := c.Param("id")
+
+	// Verify deck ownership
+	if _, err := h.decks.Get(userID, deckID); err != nil {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "forbidden"})
+	}
+
+	var req struct {
+		CardID string `json:"card_id"`
+		Rating int    `json:"rating"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	if req.Rating < 1 || req.Rating > 4 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "rating must be 1-4"})
+	}
+
+	card, err := h.cards.Get(req.CardID)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "card not found"})
+	}
+
+	now := time.Now().UTC()
+	updatedCard, reviewLog := h.scheduler.Schedule(*card, req.Rating, now)
+
+	h.cards.UpdateFSRS(&updatedCard)
+	h.reviews.CreateLog(reviewLog.CardID, reviewLog.Rating, reviewLog.ScheduledDays, reviewLog.ElapsedDays, reviewLog.State)
+
+	// Get next card
+	nextCard, dueCount, _ := h.reviews.GetNextDue(deckID)
+
+	result := map[string]interface{}{
+		"due_count": dueCount,
+	}
+	if nextCard != nil {
+		intervals := h.scheduler.PreviewIntervals(*nextCard, time.Now().UTC())
+		result["next_card"] = nextCard
+		result["intervals"] = intervals
+	}
+
+	return c.JSON(http.StatusOK, result)
+}
+
+func (h *Handler) ImportCards(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	deckID := c.Param("id")
+
+	if _, err := h.decks.Get(userID, deckID); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "deck not found"})
+	}
+
+	file, err := c.FormFile("file")
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "no file"})
+	}
+	src, err := file.Open()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "read file"})
+	}
+	defer src.Close()
+
+	count, err := h.cards.ImportCSV(deckID, src)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"imported": count,
+	})
+}
+
+func (h *Handler) GetStats(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	stats, err := h.reviews.GetStats(userID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, stats)
+}
+
+func (h *Handler) GetStatsHistory(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	history, err := h.reviews.GetHistory(userID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, history)
+}

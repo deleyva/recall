@@ -1,0 +1,14 @@
+services:
+  recall:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - recall_data:/app/data
+    environment:
+      - RECALL_PORT=8080
+      - RECALL_SESSION_KEY=${RECALL_SESSION_KEY:-change-me-in-production-32chars!!}
+    restart: unless-stopped
+
+volumes:
+  recall_data:

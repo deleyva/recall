@@ -1,0 +1,104 @@
+{{define "to_read.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "content"}}
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-2xl font-bold">To Read</h1>
+</div>
+
+{{if .Error}}
+<div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
+    {{.Error}}
+</div>
+{{end}}
+
+{{if .Success}}
+<div class="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-4">
+    {{.Success}}
+</div>
+{{end}}
+
+<form action="/to-read" method="POST" class="mb-8">
+    <div class="flex gap-2">
+        <input type="url" name="url" placeholder="Paste article URL..." required
+            class="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700">
+            Add
+        </button>
+    </div>
+</form>
+
+{{if .Articles}}
+<div class="bg-white rounded-lg shadow overflow-hidden">
+    <table class="w-full">
+        <thead class="bg-gray-50 border-b">
+            <tr>
+                <th class="text-left px-4 py-3 text-sm font-medium text-gray-500">Title</th>
+                <th class="text-left px-4 py-3 text-sm font-medium text-gray-500 hidden sm:table-cell">Domain</th>
+                <th class="text-center px-4 py-3 text-sm font-medium text-gray-500">Cards</th>
+                <th class="text-right px-4 py-3 text-sm font-medium text-gray-500">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y">
+            {{range .Articles}}
+            <tr id="article-{{.ID}}">
+                <td class="px-4 py-3">
+                    <a href="{{.URL}}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline font-medium">
+                        {{if .Title}}{{.Title}}{{else}}{{.URL}}{{end}}
+                    </a>
+                    <span class="text-gray-400 text-xs sm:hidden block">{{.Domain}}</span>
+                </td>
+                <td class="px-4 py-3 text-gray-500 text-sm hidden sm:table-cell">{{.Domain}}</td>
+                <td class="px-4 py-3 text-center">
+                    {{if gt .FlashcardCount 0}}
+                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+                        {{.FlashcardCount}}
+                    </span>
+                    {{else}}
+                    <span class="text-gray-300">0</span>
+                    {{end}}
+                </td>
+                <td class="px-4 py-3">
+                    <div class="flex items-center justify-end gap-2">
+                        {{if $.GeminiEnabled}}
+                        <form hx-post="/to-read/{{.ID}}/generate" hx-target="#article-{{.ID}}" hx-swap="outerHTML"
+                            class="flex items-center gap-1">
+                            <select name="count" class="text-xs border rounded px-1 py-1 w-14">
+                                <option value="3">3</option>
+                                <option value="5" selected>5</option>
+                                <option value="10">10</option>
+                            </select>
+                            <button type="submit" title="Generate flashcards"
+                                class="text-green-600 hover:text-green-800 text-sm font-bold px-2 py-1 rounded hover:bg-green-50">
+                                G
+                            </button>
+                        </form>
+                        {{end}}
+                        {{if eq .Domain "es.wikipedia.org" "en.wikipedia.org" "fr.wikipedia.org" "de.wikipedia.org" "pt.wikipedia.org" "it.wikipedia.org" "ja.wikipedia.org" "zh.wikipedia.org" "ru.wikipedia.org" "ca.wikipedia.org"}}
+                        <a href="/to-read/{{.ID}}/viewer" title="View images"
+                            class="text-indigo-400 hover:text-indigo-600 text-sm px-2 py-1 rounded hover:bg-indigo-50">
+                            &#x1f5bc;
+                        </a>
+                        {{end}}
+                        <form action="/to-read/{{.ID}}/delete" method="POST"
+                            onsubmit="return confirm('Delete article and associated flashcards?')">
+                            <button type="submit" title="Delete article"
+                                class="text-red-400 hover:text-red-600 text-sm px-2 py-1 rounded hover:bg-red-50">
+                                &#x1f5d1;
+                            </button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+</div>
+{{else}}
+<div class="text-center py-12 text-gray-500">
+    <p class="text-lg mb-2">No articles yet</p>
+    <p>Paste a URL above to start your reading list!</p>
+</div>
+{{end}}
+{{end}}

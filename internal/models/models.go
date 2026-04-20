@@ -18,9 +18,21 @@ type Deck struct {
 	DueCount    int       `json:"due_count,omitempty"` // computed field
 }
 
+type Article struct {
+	ID             string    `json:"id"`
+	UserID         string    `json:"user_id"`
+	URL            string    `json:"url"`
+	Title          string    `json:"title"`
+	Domain         string    `json:"domain"`
+	Content        string    `json:"-"`
+	CreatedAt      time.Time `json:"created_at"`
+	FlashcardCount int       `json:"flashcard_count,omitempty"`
+}
+
 type Card struct {
 	ID            string    `json:"id"`
 	DeckID        string    `json:"deck_id"`
+	ArticleID     *string   `json:"article_id,omitempty"`
 	Front         string    `json:"front"`
 	Back          string    `json:"back"`
 	Due           time.Time `json:"due"`
@@ -55,4 +67,18 @@ type Stats struct {
 type DailyReviewCount struct {
 	Date    string `json:"date"`
 	Reviews int    `json:"reviews"`
+}
+
+type APIToken struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type WikiImage struct {
+	URL         string `json:"url"`
+	ThumbURL    string `json:"thumb_url"`
+	Description string `json:"description"`
+	Title       string `json:"title"`
 }

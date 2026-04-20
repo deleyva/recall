@@ -19,14 +19,14 @@ func NewCardService(db *sql.DB) *CardService {
 	return &CardService{db: db}
 }
 
-func (s *CardService) Create(deckID, front, back string) (*models.Card, error) {
+func (s *CardService) Create(deckID, front, back string, articleID *string) (*models.Card, error) {
 	id := generateID()
 	now := time.Now().UTC()
 
 	_, err := s.db.Exec(`
-		INSERT INTO cards (id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, last_review, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, '0001-01-01T00:00:00Z', ?, ?)
-	`, id, deckID, front, back, now.Format(time.RFC3339), now.Format(time.RFC3339), now.Format(time.RFC3339))
+		INSERT INTO cards (id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, last_review, created_at, updated_at, article_id)
+		VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, '0001-01-01T00:00:00Z', ?, ?, ?)
+	`, id, deckID, front, back, now.Format(time.RFC3339), now.Format(time.RFC3339), now.Format(time.RFC3339), articleID)
 	if err != nil {
 		return nil, fmt.Errorf("create card: %w", err)
 	}
@@ -34,12 +34,48 @@ func (s *CardService) Create(deckID, front, back string) (*models.Card, error) {
 	return &models.Card{
 		ID:        id,
 		DeckID:    deckID,
+		ArticleID: articleID,
 		Front:     front,
 		Back:      back,
 		Due:       now,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}, nil
+}
+
+type FlashcardPair struct {
+	Front string `json:"front"`
+	Back  string `json:"back"`
+}
+
+func (s *CardService) CreateBatch(deckID string, articleID *string, pairs []FlashcardPair) (int, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	count := 0
+	for _, p := range pairs {
+		if p.Front == "" || p.Back == "" {
+			continue
+		}
+		id := generateID()
+		now := time.Now().UTC()
+		_, err = tx.Exec(`
+			INSERT INTO cards (id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, last_review, created_at, updated_at, article_id)
+			VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, '0001-01-01T00:00:00Z', ?, ?, ?)
+		`, id, deckID, p.Front, p.Back, now.Format(time.RFC3339), now.Format(time.RFC3339), now.Format(time.RFC3339), articleID)
+		if err != nil {
+			return count, fmt.Errorf("insert card: %w", err)
+		}
+		count++
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit transaction: %w", err)
+	}
+	return count, nil
 }
 
 func (s *CardService) List(deckID string, page, perPage int) ([]models.Card, int, error) {
@@ -56,7 +92,7 @@ func (s *CardService) List(deckID string, page, perPage int) ([]models.Card, int
 
 	rows, err := s.db.Query(`
 		SELECT id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days,
-			reps, lapses, state, last_review, created_at, updated_at
+			reps, lapses, state, last_review, created_at, updated_at, article_id
 		FROM cards WHERE deck_id = ?
 		ORDER BY created_at DESC
 		LIMIT ? OFFSET ?
@@ -80,7 +116,7 @@ func (s *CardService) List(deckID string, page, perPage int) ([]models.Card, int
 func (s *CardService) Get(cardID string) (*models.Card, error) {
 	row := s.db.QueryRow(`
 		SELECT id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days,
-			reps, lapses, state, last_review, created_at, updated_at
+			reps, lapses, state, last_review, created_at, updated_at, article_id
 		FROM cards WHERE id = ?
 	`, cardID)
 	return scanCardRow(row)
@@ -90,7 +126,7 @@ func (s *CardService) Get(cardID string) (*models.Card, error) {
 func (s *CardService) GetForUser(cardID, userID string) (*models.Card, error) {
 	row := s.db.QueryRow(`
 		SELECT c.id, c.deck_id, c.front, c.back, c.due, c.stability, c.difficulty, c.elapsed_days, c.scheduled_days,
-			c.reps, c.lapses, c.state, c.last_review, c.created_at, c.updated_at
+			c.reps, c.lapses, c.state, c.last_review, c.created_at, c.updated_at, c.article_id
 		FROM cards c
 		JOIN decks d ON c.deck_id = d.id
 		WHERE c.id = ? AND d.user_id = ?
@@ -227,8 +263,9 @@ type scannable interface {
 func scanCardFromRow(s scannable) (*models.Card, error) {
 	var c models.Card
 	var due, lastReview, createdAt, updatedAt string
+	var articleID *string
 	err := s.Scan(&c.ID, &c.DeckID, &c.Front, &c.Back, &due, &c.Stability, &c.Difficulty,
-		&c.ElapsedDays, &c.ScheduledDays, &c.Reps, &c.Lapses, &c.State, &lastReview, &createdAt, &updatedAt)
+		&c.ElapsedDays, &c.ScheduledDays, &c.Reps, &c.Lapses, &c.State, &lastReview, &createdAt, &updatedAt, &articleID)
 	if err != nil {
 		return nil, fmt.Errorf("scan card: %w", err)
 	}
@@ -236,6 +273,7 @@ func scanCardFromRow(s scannable) (*models.Card, error) {
 	c.LastReview, _ = time.Parse(time.RFC3339, lastReview)
 	c.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 	c.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	c.ArticleID = articleID
 	return &c, nil
 }
 

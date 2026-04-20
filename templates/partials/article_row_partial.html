@@ -1,0 +1,48 @@
+{{define "article_row_partial.html"}}
+<tr id="article-{{.Article.ID}}">
+    <td class="px-4 py-3">
+        <a href="{{.Article.URL}}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline font-medium">
+            {{if .Article.Title}}{{.Article.Title}}{{else}}{{.Article.URL}}{{end}}
+        </a>
+        <span class="text-gray-400 text-xs sm:hidden block">{{.Article.Domain}}</span>
+        {{if .Message}}
+        <span class="text-green-600 text-xs ml-2">{{.Message}}</span>
+        {{end}}
+    </td>
+    <td class="px-4 py-3 text-gray-500 text-sm hidden sm:table-cell">{{.Article.Domain}}</td>
+    <td class="px-4 py-3 text-center">
+        {{if gt .Article.FlashcardCount 0}}
+        <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+            {{.Article.FlashcardCount}}
+        </span>
+        {{else}}
+        <span class="text-gray-300">0</span>
+        {{end}}
+    </td>
+    <td class="px-4 py-3">
+        <div class="flex items-center justify-end gap-2">
+            {{if .GeminiEnabled}}
+            <form hx-post="/to-read/{{.Article.ID}}/generate" hx-target="#article-{{.Article.ID}}" hx-swap="outerHTML"
+                class="flex items-center gap-1">
+                <select name="count" class="text-xs border rounded px-1 py-1 w-14">
+                    <option value="3">3</option>
+                    <option value="5" selected>5</option>
+                    <option value="10">10</option>
+                </select>
+                <button type="submit" title="Generate flashcards"
+                    class="text-green-600 hover:text-green-800 text-sm font-bold px-2 py-1 rounded hover:bg-green-50">
+                    G
+                </button>
+            </form>
+            {{end}}
+            <form action="/to-read/{{.Article.ID}}/delete" method="POST"
+                onsubmit="return confirm('Delete article and associated flashcards?')">
+                <button type="submit" title="Delete article"
+                    class="text-red-400 hover:text-red-600 text-sm px-2 py-1 rounded hover:bg-red-50">
+                    &#x1f5d1;
+                </button>
+            </form>
+        </div>
+    </td>
+</tr>
+{{end}}

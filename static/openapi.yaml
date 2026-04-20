@@ -1,0 +1,288 @@
+openapi: "3.0.3"
+info:
+  title: Recall API
+  description: |
+    Recall is a spaced repetition flashcard app with a reading list feature.
+    Authenticate using Bearer tokens generated from the Profile page.
+  version: "1.0.0"
+
+servers:
+  - url: /api/v1
+    description: API v1
+
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: "API token from Profile page (format: rcl_...)"
+
+  schemas:
+    Article:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        url:
+          type: string
+        title:
+          type: string
+        domain:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        flashcard_count:
+          type: integer
+
+    Deck:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        due_count:
+          type: integer
+
+    Card:
+      type: object
+      properties:
+        id:
+          type: string
+        deck_id:
+          type: string
+        article_id:
+          type: string
+          nullable: true
+        front:
+          type: string
+        back:
+          type: string
+        due:
+          type: string
+          format: date-time
+        state:
+          type: integer
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+paths:
+  /articles:
+    get:
+      summary: List reading list articles
+      operationId: listArticles
+      tags: [Articles]
+      responses:
+        "200":
+          description: List of articles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Article"
+
+    post:
+      summary: Add article to reading list
+      operationId: createArticle
+      tags: [Articles]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url:
+                  type: string
+                  description: Article URL to add
+                  example: "https://en.wikipedia.org/wiki/Bossa_nova"
+      responses:
+        "201":
+          description: Article created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Article"
+        "400":
+          description: Invalid URL or already added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /articles/{id}:
+    delete:
+      summary: Delete article and associated flashcards
+      operationId: deleteArticle
+      tags: [Articles]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+        "404":
+          description: Not found
+
+  /articles/{id}/generate:
+    post:
+      summary: Generate flashcards from article via Gemini AI
+      operationId: generateArticleCards
+      tags: [Articles]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                count:
+                  type: integer
+                  default: 5
+                  minimum: 1
+                  maximum: 20
+      responses:
+        "200":
+          description: Cards generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated:
+                    type: integer
+
+  /decks:
+    get:
+      summary: List decks
+      operationId: listDecks
+      tags: [Decks]
+      responses:
+        "200":
+          description: List of decks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Deck"
+
+    post:
+      summary: Create deck
+      operationId: createDeck
+      tags: [Decks]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+      responses:
+        "201":
+          description: Deck created
+
+  /decks/{id}:
+    get:
+      summary: Get deck
+      operationId: getDeck
+      tags: [Decks]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deck details
+
+  /decks/{id}/cards:
+    get:
+      summary: List cards in deck
+      operationId: listCards
+      tags: [Cards]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of cards
+
+    post:
+      summary: Create card
+      operationId: createCard
+      tags: [Cards]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [front, back]
+              properties:
+                front:
+                  type: string
+                back:
+                  type: string
+      responses:
+        "201":
+          description: Card created
+
+  /stats:
+    get:
+      summary: Get user statistics
+      operationId: getStats
+      tags: [Stats]
+      responses:
+        "200":
+          description: User stats

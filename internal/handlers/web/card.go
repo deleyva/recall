@@ -81,7 +81,7 @@ func (h *CardHandler) CreateCard(c echo.Context) error {
 		return c.Redirect(http.StatusSeeOther, "/decks/"+deckID+"/cards/new?error=Front+and+back+required")
 	}
 
-	h.cards.Create(deckID, front, back)
+	h.cards.Create(deckID, front, back, nil)
 
 	// If addAnother flag is set, stay on the new card page
 	if c.FormValue("add_another") == "true" {

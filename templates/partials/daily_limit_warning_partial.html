@@ -1,0 +1,24 @@
+{{define "daily_limit_warning_partial.html"}}
+<tr id="article-{{.ArticleID}}">
+    <td colspan="4" class="px-4 py-4">
+        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <p class="text-yellow-800 font-medium mb-2">Daily limit warning</p>
+            <p class="text-yellow-700 text-sm mb-3">
+                You've already created {{.TodayCount}} flashcards today. Creating more may reduce retention quality.
+            </p>
+            <div class="flex gap-2">
+                <form hx-post="/to-read/{{.ArticleID}}/generate" hx-target="#article-{{.ArticleID}}" hx-swap="outerHTML">
+                    <input type="hidden" name="count" value="{{.Count}}">
+                    <input type="hidden" name="confirmed" value="true">
+                    <button type="submit" class="bg-yellow-600 text-white px-4 py-1 rounded text-sm hover:bg-yellow-700">
+                        Generate anyway
+                    </button>
+                </form>
+                <button onclick="location.reload()" class="bg-gray-200 text-gray-700 px-4 py-1 rounded text-sm hover:bg-gray-300">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </td>
+</tr>
+{{end}}

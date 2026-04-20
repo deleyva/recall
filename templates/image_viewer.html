@@ -1,0 +1,112 @@
+{{define "image_viewer.html"}}
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Article.Title}} - Images - Recall</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .slide { display: none; }
+        .slide.active { display: flex; }
+    </style>
+</head>
+<body class="bg-black h-full text-white">
+    <div id="viewer" class="h-full flex flex-col">
+        <!-- Top bar -->
+        <div class="flex justify-between items-center px-4 py-2 bg-black/80 z-10">
+            <a href="/to-read" class="text-white hover:text-gray-300 text-sm">&larr; Back to Reading List</a>
+            <span class="text-gray-400 text-sm truncate mx-4">{{.Article.Title}}</span>
+            <span id="counter" class="text-gray-400 text-sm shrink-0"></span>
+        </div>
+
+        <!-- Loading -->
+        <div id="loading" class="flex-1 flex items-center justify-center">
+            <p class="text-gray-400 text-lg">Loading images...</p>
+        </div>
+
+        <!-- Slides container -->
+        <div id="slides" class="flex-1 relative hidden">
+        </div>
+
+        <!-- Navigation -->
+        <div id="nav" class="flex justify-center items-center gap-4 py-4 bg-black/80 hidden">
+            <button onclick="prevSlide()" class="bg-white/10 hover:bg-white/20 px-6 py-2 rounded-lg text-lg">&larr; Prev</button>
+            <button onclick="nextSlide()" class="bg-white/10 hover:bg-white/20 px-6 py-2 rounded-lg text-lg">Next &rarr;</button>
+        </div>
+
+        <!-- No images -->
+        <div id="no-images" class="flex-1 flex items-center justify-center hidden">
+            <p class="text-gray-400 text-lg">No images found for this article.</p>
+        </div>
+    </div>
+
+    <script>
+        let currentSlide = 0;
+        let totalSlides = 0;
+
+        async function loadImages() {
+            try {
+                const resp = await fetch('/to-read/{{.Article.ID}}/images');
+                const data = await resp.json();
+
+                if (!data.images || data.images.length === 0) {
+                    document.getElementById('loading').classList.add('hidden');
+                    document.getElementById('no-images').classList.remove('hidden');
+                    return;
+                }
+
+                const slidesEl = document.getElementById('slides');
+                totalSlides = data.images.length;
+
+                data.images.forEach((img, i) => {
+                    const slide = document.createElement('div');
+                    slide.className = 'slide flex-col items-center justify-center h-full absolute inset-0' + (i === 0 ? ' active' : '');
+                    slide.innerHTML = `
+                        <div class="flex-1 flex items-center justify-center p-4 overflow-hidden">
+                            <img src="${img.thumb_url || img.url}" alt="${img.description || ''}"
+                                class="max-h-full max-w-full object-contain rounded shadow-lg"
+                                onerror="this.src='${img.url}'">
+                        </div>
+                        <div class="px-8 py-3 text-center">
+                            <p class="text-gray-300 text-sm max-w-3xl mx-auto">${img.description || img.title || ''}</p>
+                        </div>
+                    `;
+                    slidesEl.appendChild(slide);
+                });
+
+                document.getElementById('loading').classList.add('hidden');
+                slidesEl.classList.remove('hidden');
+                document.getElementById('nav').classList.remove('hidden');
+                updateCounter();
+            } catch (err) {
+                document.getElementById('loading').innerHTML = '<p class="text-red-400">Failed to load images: ' + err.message + '</p>';
+            }
+        }
+
+        function showSlide(n) {
+            const slides = document.querySelectorAll('.slide');
+            slides.forEach(s => s.classList.remove('active'));
+            currentSlide = ((n % totalSlides) + totalSlides) % totalSlides;
+            slides[currentSlide].classList.add('active');
+            updateCounter();
+        }
+
+        function nextSlide() { showSlide(currentSlide + 1); }
+        function prevSlide() { showSlide(currentSlide - 1); }
+        function updateCounter() {
+            document.getElementById('counter').textContent = (currentSlide + 1) + ' / ' + totalSlides;
+        }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); nextSlide(); }
+            if (e.key === 'ArrowLeft') { e.preventDefault(); prevSlide(); }
+            if (e.key === 'Escape') { window.location.href = '/to-read'; }
+        });
+
+        loadImages();
+    </script>
+</body>
+</html>
+{{end}}

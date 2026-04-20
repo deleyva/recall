@@ -17,16 +17,20 @@ type Handler struct {
 	decks     *services.DeckService
 	cards     *services.CardService
 	reviews   *services.ReviewService
+	articles  *services.ArticleService
+	gemini    *services.GeminiService
 	scheduler *scheduler.Scheduler
 	authMw    *middleware.AuthMiddleware
 }
 
-func NewHandler(auth *services.AuthService, decks *services.DeckService, cards *services.CardService, reviews *services.ReviewService, sched *scheduler.Scheduler, authMw *middleware.AuthMiddleware) *Handler {
+func NewHandler(auth *services.AuthService, decks *services.DeckService, cards *services.CardService, reviews *services.ReviewService, articles *services.ArticleService, gemini *services.GeminiService, sched *scheduler.Scheduler, authMw *middleware.AuthMiddleware) *Handler {
 	return &Handler{
 		auth:      auth,
 		decks:     decks,
 		cards:     cards,
 		reviews:   reviews,
+		articles:  articles,
+		gemini:    gemini,
 		scheduler: sched,
 		authMw:    authMw,
 	}
@@ -190,7 +194,7 @@ func (h *Handler) CreateCard(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
-	card, err := h.cards.Create(deckID, req.Front, req.Back)
+	card, err := h.cards.Create(deckID, req.Front, req.Back, nil)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -351,4 +355,89 @@ func (h *Handler) GetStatsHistory(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, history)
+}
+
+// Article API endpoints
+
+func (h *Handler) CreateArticle(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	var req struct {
+		URL string `json:"url"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	if req.URL == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "url required"})
+	}
+
+	article, err := h.articles.Create(userID, req.URL)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusCreated, article)
+}
+
+func (h *Handler) ListArticles(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	articles, err := h.articles.List(userID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if articles == nil {
+		articles = []models.Article{}
+	}
+	return c.JSON(http.StatusOK, articles)
+}
+
+func (h *Handler) DeleteArticle(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	if err := h.articles.Delete(userID, c.Param("id")); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "article not found"})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"message": "deleted"})
+}
+
+func (h *Handler) GenerateArticleCards(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	articleID := c.Param("id")
+
+	if !h.gemini.IsConfigured() {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "Gemini not configured"})
+	}
+
+	var req struct {
+		Count int `json:"count"`
+	}
+	if err := c.Bind(&req); err != nil || req.Count < 1 {
+		req.Count = 5
+	}
+	if req.Count > 20 {
+		req.Count = 20
+	}
+
+	article, err := h.articles.Get(userID, articleID)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "article not found"})
+	}
+
+	existing, _ := h.articles.GetCardsForArticle(articleID)
+	pairs, err := h.gemini.GenerateFlashcards(article.Content, existing, req.Count)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	deckID, err := h.articles.EnsureReadingDeck(userID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	count, err := h.cards.CreateBatch(deckID, &articleID, pairs)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"generated": count,
+	})
 }

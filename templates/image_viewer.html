@@ -1,21 +1,27 @@
 {{define "image_viewer.html"}}
 <!DOCTYPE html>
-<html lang="en" class="h-full">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>{{.Article.Title}} - Images - Recall</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+        html, body { margin: 0; padding: 0; height: 100%; height: 100dvh; overflow: hidden; }
         .slide { display: none; }
         .slide.active { display: flex; }
+        #viewer { height: 100%; height: 100dvh; display: flex; flex-direction: column; }
+        #slides { position: relative; flex: 1; min-height: 0; }
+        .slide { position: absolute; top: 0; left: 0; right: 0; bottom: 0; flex-direction: column; }
+        .slide-img-wrap { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+        .slide-img-wrap img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 0.5rem; }
     </style>
 </head>
-<body class="bg-black h-full text-white">
-    <div id="viewer" class="h-full flex flex-col">
+<body class="bg-black text-white">
+    <div id="viewer">
         <!-- Top bar -->
         <div class="flex justify-between items-center px-4 py-2 bg-black/80 z-10">
-            <a href="/to-read" class="text-white hover:text-gray-300 text-sm">&larr; Back to Reading List</a>
+            <a href="/to-read" class="text-white hover:text-gray-300 text-sm">&larr; Back</a>
             <span class="text-gray-400 text-sm truncate mx-4">{{.Article.Title}}</span>
             <span id="counter" class="text-gray-400 text-sm shrink-0"></span>
         </div>
@@ -26,11 +32,11 @@
         </div>
 
         <!-- Slides container -->
-        <div id="slides" class="flex-1 relative hidden">
+        <div id="slides" class="hidden">
         </div>
 
         <!-- Navigation -->
-        <div id="nav" class="flex justify-center items-center gap-4 py-4 bg-black/80 hidden">
+        <div id="nav" class="flex justify-center items-center gap-4 py-3 bg-black/80 hidden">
             <button onclick="prevSlide()" class="bg-white/10 hover:bg-white/20 px-6 py-2 rounded-lg text-lg">&larr; Prev</button>
             <button onclick="nextSlide()" class="bg-white/10 hover:bg-white/20 px-6 py-2 rounded-lg text-lg">Next &rarr;</button>
         </div>
@@ -44,11 +50,17 @@
     <script>
         let currentSlide = 0;
         let totalSlides = 0;
+        let touchStartX = 0;
 
         async function loadImages() {
             try {
                 const resp = await fetch('/to-read/{{.Article.ID}}/images');
                 const data = await resp.json();
+
+                if (!resp.ok) {
+                    document.getElementById('loading').innerHTML = '<p class="text-red-400">Error: ' + (data.error || 'Unknown error') + '</p>';
+                    return;
+                }
 
                 if (!data.images || data.images.length === 0) {
                     document.getElementById('loading').classList.add('hidden');
@@ -61,15 +73,16 @@
 
                 data.images.forEach((img, i) => {
                     const slide = document.createElement('div');
-                    slide.className = 'slide flex-col items-center justify-center h-full absolute inset-0' + (i === 0 ? ' active' : '');
+                    slide.className = 'slide' + (i === 0 ? ' active' : '');
+                    const desc = (img.description || img.title || '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
                     slide.innerHTML = `
-                        <div class="flex-1 flex items-center justify-center p-4 overflow-hidden">
-                            <img src="${img.thumb_url || img.url}" alt="${img.description || ''}"
-                                class="max-h-full max-w-full object-contain rounded shadow-lg"
+                        <div class="slide-img-wrap">
+                            <img src="${img.thumb_url || img.url}" alt="${desc}"
+                                referrerpolicy="no-referrer"
                                 onerror="this.src='${img.url}'">
                         </div>
-                        <div class="px-8 py-3 text-center">
-                            <p class="text-gray-300 text-sm max-w-3xl mx-auto">${img.description || img.title || ''}</p>
+                        <div class="px-4 py-2 text-center">
+                            <p class="text-gray-300 text-sm">${img.description || img.title || ''}</p>
                         </div>
                     `;
                     slidesEl.appendChild(slide);
@@ -104,6 +117,13 @@
             if (e.key === 'ArrowLeft') { e.preventDefault(); prevSlide(); }
             if (e.key === 'Escape') { window.location.href = '/to-read'; }
         });
+
+        // Touch swipe navigation
+        document.addEventListener('touchstart', (e) => { touchStartX = e.changedTouches[0].screenX; }, {passive: true});
+        document.addEventListener('touchend', (e) => {
+            const diff = e.changedTouches[0].screenX - touchStartX;
+            if (Math.abs(diff) > 50) { diff < 0 ? nextSlide() : prevSlide(); }
+        }, {passive: true});
 
         loadImages();
     </script>

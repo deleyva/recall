@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/deleyva/recall/internal/models"
+
 )
 
 type CronService struct {
@@ -24,8 +24,9 @@ func NewCronService(db *sql.DB, articles *ArticleService, cards *CardService, ge
 	}
 }
 
-// GenerateDailyCards generates up to 5 flashcards per user from their reading list.
-// Prioritizes articles with 0 flashcards.
+// GenerateDailyCards generates up to 8 flashcards per user from their reading list.
+// Prioritizes articles with 0 flashcards, then longer articles.
+// Caps at 2 cards per article per run to spread across articles.
 func (s *CronService) GenerateDailyCards() {
 	if !s.gemini.IsConfigured() {
 		log.Println("[cron] Gemini not configured, skipping daily card generation")
@@ -61,8 +62,8 @@ func (s *CronService) GenerateDailyCards() {
 }
 
 func (s *CronService) generateForUser(userID string) {
-	// Get articles ordered by flashcard count (0 first)
-	articles, err := s.articles.List(userID)
+	// Get articles prioritized: fewest cards first, then newest first
+	articles, err := s.articles.ListForCardGeneration(userID)
 	if err != nil {
 		log.Printf("[cron] Failed to list articles for user %s: %v", userID, err)
 		return
@@ -72,18 +73,7 @@ func (s *CronService) generateForUser(userID string) {
 		return
 	}
 
-	// Sort: articles with 0 cards first (List already returns them, just filter)
-	var prioritized []models.Article
-	var withCards []models.Article
-	for _, a := range articles {
-		if a.FlashcardCount == 0 {
-			prioritized = append(prioritized, a)
-		} else {
-			withCards = append(withCards, a)
-		}
-	}
-	// Combine: 0-card articles first, then others
-	allArticles := append(prioritized, withCards...)
+	allArticles := articles
 
 	// Ensure reading deck exists
 	deckID, err := s.articles.EnsureReadingDeck(userID)
@@ -93,7 +83,8 @@ func (s *CronService) generateForUser(userID string) {
 	}
 
 	totalGenerated := 0
-	maxCards := 5
+	maxCards := 8
+	maxCardsPerArticle := 2
 
 	for _, article := range allArticles {
 		if totalGenerated >= maxCards {
@@ -101,6 +92,9 @@ func (s *CronService) generateForUser(userID string) {
 		}
 
 		remaining := maxCards - totalGenerated
+		if remaining > maxCardsPerArticle {
+			remaining = maxCardsPerArticle
+		}
 
 		// Get article content
 		full, err := s.articles.Get(userID, article.ID)

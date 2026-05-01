@@ -111,6 +111,34 @@ func (s *ArticleService) List(userID string) ([]models.Article, error) {
 	return articles, nil
 }
 
+// ListForCardGeneration returns articles ordered for cron card generation:
+// fewest flashcards first, then longest content, then newest.
+func (s *ArticleService) ListForCardGeneration(userID string) ([]models.Article, error) {
+	rows, err := s.db.Query(`
+		SELECT a.id, a.user_id, a.url, a.title, a.domain, a.created_at,
+			COALESCE((SELECT COUNT(*) FROM cards c WHERE c.article_id = a.id), 0) as flashcard_count
+		FROM articles a
+		WHERE a.user_id = ?
+		ORDER BY flashcard_count ASC, LENGTH(COALESCE(a.content, '')) DESC, a.created_at DESC
+	`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list articles for card generation: %w", err)
+	}
+	defer rows.Close()
+
+	var articles []models.Article
+	for rows.Next() {
+		var a models.Article
+		var createdAt string
+		if err := rows.Scan(&a.ID, &a.UserID, &a.URL, &a.Title, &a.Domain, &createdAt, &a.FlashcardCount); err != nil {
+			return nil, fmt.Errorf("scan article: %w", err)
+		}
+		a.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+		articles = append(articles, a)
+	}
+	return articles, nil
+}
+
 func (s *ArticleService) Get(userID, articleID string) (*models.Article, error) {
 	var a models.Article
 	var createdAt string

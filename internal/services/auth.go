@@ -55,6 +55,40 @@ func (s *AuthService) Register(email, password string) (*models.User, error) {
 	}, nil
 }
 
+func (s *AuthService) ResetPassword(email, newPassword string) error {
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+	result, err := s.db.Exec(
+		"UPDATE users SET password_hash = ? WHERE email = ?",
+		string(hash), email,
+	)
+	if err != nil {
+		return fmt.Errorf("reset password: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("user not found: %s", email)
+	}
+	return nil
+}
+
+func (s *AuthService) ListUsers() ([]string, error) {
+	rows, err := s.db.Query("SELECT email FROM users ORDER BY created_at")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var emails []string
+	for rows.Next() {
+		var e string
+		rows.Scan(&e)
+		emails = append(emails, e)
+	}
+	return emails, nil
+}
+
 func (s *AuthService) Login(email, password string) (*models.User, error) {
 	var user models.User
 	var hash string

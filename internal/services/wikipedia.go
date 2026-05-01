@@ -112,7 +112,13 @@ func (s *WikipediaService) fetchImageList(apiBase, title string) ([]string, erro
 	u := fmt.Sprintf("%s?action=query&titles=%s&prop=images&format=json&imlimit=50",
 		apiBase, url.QueryEscape(title))
 
-	resp, err := s.httpClient.Get(u)
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("User-Agent", "Recall/1.0 (Personal reading app; contact: recall@leyvitando.synology.me)")
+
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch image list: %w", err)
 	}
@@ -154,10 +160,16 @@ type wikiImageInfoResponse struct {
 
 func (s *WikipediaService) fetchImageInfo(apiBase string, titles []string) ([]models.WikiImage, error) {
 	joinedTitles := strings.Join(titles, "|")
-	u := fmt.Sprintf("%s?action=query&titles=%s&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=1200&format=json",
+	u := fmt.Sprintf("%s?action=query&titles=%s&prop=imageinfo&iiprop=url|extmetadata&iiurlwidth=800&format=json",
 		apiBase, url.QueryEscape(joinedTitles))
 
-	resp, err := s.httpClient.Get(u)
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("User-Agent", "Recall/1.0 (Personal reading app; contact: recall@leyvitando.synology.me)")
+
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch image info: %w", err)
 	}

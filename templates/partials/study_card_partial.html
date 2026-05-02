@@ -2,7 +2,7 @@
 <div class="bg-white rounded-lg shadow-lg p-8 text-center">
     <div class="mb-4 text-sm text-gray-400">{{.DueCount}} remaining</div>
     <div class="text-xl font-medium mb-8 min-h-[100px] flex items-center justify-center">
-        {{.Card.Front}}
+        {{.Card.Front | safeHTML}}
     </div>
     <button
         hx-get="/decks/{{if .Deck}}{{.Deck.ID}}{{else}}{{.Card.DeckID}}{{end}}/study/{{.Card.ID}}/answer"

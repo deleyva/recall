@@ -19,10 +19,11 @@ func NewRegistry() *Registry {
 	return &Registry{
 		templates: make(map[string]*template.Template),
 		funcs: template.FuncMap{
-			"minus": func(a, b int) int { return a - b },
-			"plus":  func(a, b int) int { return a + b },
-			"mod":   func(a, b int) int { return a % b },
-			"ceil":  func(a, b float64) int { return int(math.Ceil(a / b)) },
+			"minus":    func(a, b int) int { return a - b },
+			"plus":     func(a, b int) int { return a + b },
+			"mod":      func(a, b int) int { return a % b },
+			"ceil":     func(a, b float64) int { return int(math.Ceil(a / b)) },
+			"safeHTML": func(s string) template.HTML { return template.HTML(s) },
 		},
 	}
 }

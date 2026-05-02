@@ -63,6 +63,15 @@ func (s *GeminiService) GenerateFlashcards(content string, existing []models.Car
 	prompt.WriteString(fmt.Sprintf("%d", count))
 	prompt.WriteString(" flashcards from the following article content.\n\n")
 
+	prompt.WriteString("FORMATTING RULES:\n")
+	prompt.WriteString("- The \"back\" field MUST use HTML formatting for readability.\n")
+	prompt.WriteString("- Use <strong> to highlight key terms and important concepts.\n")
+	prompt.WriteString("- When listing items without a specific order, use <ul><li>...</li></ul>.\n")
+	prompt.WriteString("- When listing items in a specific sequence or ranking, use <ol><li>...</li></ol>.\n")
+	prompt.WriteString("- Never use raw numbered text like \"1. item\". Always use proper HTML list tags.\n")
+	prompt.WriteString("- Keep the \"front\" field as a clear, concise question (plain text, no HTML).\n")
+	prompt.WriteString("- CRITICAL: Write both front and back in the SAME LANGUAGE as the article content. If the article is in Spanish, the flashcards must be in Spanish. If in English, in English. Match the article's language exactly.\n\n")
+
 	if len(existing) > 0 {
 		prompt.WriteString("The following flashcards already exist for this article. Create NEW flashcards covering DIFFERENT content:\n")
 		for _, c := range existing {
@@ -73,7 +82,7 @@ func (s *GeminiService) GenerateFlashcards(content string, existing []models.Car
 
 	prompt.WriteString("Article content:\n")
 	prompt.WriteString(content)
-	prompt.WriteString("\n\nRespond ONLY with a JSON array of objects with \"front\" and \"back\" keys. No markdown, no explanation. Example: [{\"front\":\"What is X?\",\"back\":\"X is Y.\"}]")
+	prompt.WriteString("\n\nRespond ONLY with a JSON array of objects with \"front\" and \"back\" keys. No markdown, no explanation. Example: [{\"front\":\"What is X?\",\"back\":\"<strong>X</strong> is a concept that includes:<ul><li>First aspect</li><li>Second aspect</li></ul>\"}]")
 
 	reqBody := geminiRequest{
 		Contents: []geminiContent{

@@ -135,6 +135,26 @@ curl -b cookies http://localhost:8080/api/v1/stats
 - **Goose** for database migrations
 - **gorilla/sessions** for auth
 
+## Roadmap
+
+| # | Feature | Status | Description |
+|---|---------|--------|-------------|
+| F1 | **AI Chat + Development Questions** | 📋 Planned | Chat interface for discussing articles, 2 daily essay questions with AI evaluation (Gemini multimodal) |
+| F2 | **Daily Podcast via NotebookLM** | 📋 Planned | Auto-generated daily audio overview from recent/pending articles |
+| F3 | **Configurable Daily Flashcards** | ✅ Done | Per-user configurable card limit (default 5/day) |
+| F4 | **Playlist Manager** | 📋 Planned | Link Spotify/YouTube playlists to articles or decks as study material |
+| F5 | **Readeck → Recall Sync** | ✅ Done | Tag article with "recall" in Readeck → auto-imported every 15 min (configure in Profile) |
+| F6 | **Roadmap in README** | ✅ Done | This section — updated each dev session |
+
+## Backlog
+
+- **Reading progress tracking** — mark articles as read/in-progress
+- **Spaced repetition analytics** — retention curves, optimal study times
+- **Mobile PWA** — installable web app with offline study
+- **Deck sharing** — public deck URLs for collaboration
+- **Markdown cards** — rich formatting in card front/back
+- **Tag system** — organize decks and articles by tags
+
 ## License
 
 MIT

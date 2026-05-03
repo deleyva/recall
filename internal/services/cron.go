@@ -83,7 +83,7 @@ func (s *CronService) generateForUser(userID string) {
 	}
 
 	totalGenerated := 0
-	maxCards := 8
+	maxCards := s.getUserDailyLimit(userID)
 	maxCardsPerArticle := 2
 
 	for _, article := range allArticles {
@@ -131,5 +131,14 @@ func (s *CronService) generateForUser(userID string) {
 		time.Sleep(2 * time.Second)
 	}
 
-	log.Printf("[cron] User %s: total %d cards generated", userID, totalGenerated)
+	log.Printf("[cron] User %s: total %d cards generated (limit: %d)", userID, totalGenerated, maxCards)
+}
+
+func (s *CronService) getUserDailyLimit(userID string) int {
+	var limit int
+	err := s.db.QueryRow("SELECT daily_card_limit FROM users WHERE id = ?", userID).Scan(&limit)
+	if err != nil || limit <= 0 {
+		return 5 // default
+	}
+	return limit
 }

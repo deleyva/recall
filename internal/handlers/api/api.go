@@ -362,13 +362,25 @@ func (h *Handler) GetStatsHistory(c echo.Context) error {
 func (h *Handler) CreateArticle(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 	var req struct {
-		URL string `json:"url"`
+		URL     string `json:"url"`
+		Title   string `json:"title"`
+		Content string `json:"content"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
+
+	// If content is provided directly, create without fetching
+	if req.Content != "" {
+		article, err := h.articles.CreateDirect(userID, req.URL, req.Title, req.Content)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+		return c.JSON(http.StatusCreated, article)
+	}
+
 	if req.URL == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "url required"})
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "url or content required"})
 	}
 
 	article, err := h.articles.Create(userID, req.URL)

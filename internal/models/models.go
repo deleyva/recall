@@ -3,10 +3,13 @@ package models
 import "time"
 
 type User struct {
-	ID           string    `json:"id"`
-	Email        string    `json:"email"`
-	PasswordHash string    `json:"-"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID               string    `json:"id"`
+	Email            string    `json:"email"`
+	PasswordHash     string    `json:"-"`
+	DailyCardLimit   int       `json:"daily_card_limit"`
+	ReadeckURL       string    `json:"-"`
+	ReadeckAPIToken  string    `json:"-"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 type Deck struct {

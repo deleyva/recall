@@ -85,6 +85,53 @@ func (s *ArticleService) Create(userID, rawURL string) (*models.Article, error) 
 	}, nil
 }
 
+// CreateDirect creates an article with pre-fetched content (e.g., from Readeck webhook).
+func (s *ArticleService) CreateDirect(userID, rawURL, title, content string) (*models.Article, error) {
+	domain := ""
+	if rawURL != "" {
+		parsed, _ := url.Parse(rawURL)
+		if parsed != nil {
+			domain = parsed.Hostname()
+		}
+	}
+	if title == "" {
+		if domain != "" {
+			title = domain
+		} else {
+			title = "Untitled"
+		}
+	}
+
+	// Truncate content to 50KB
+	if len(content) > 50*1024 {
+		content = content[:50*1024]
+	}
+
+	id := generateID()
+	now := time.Now().UTC()
+
+	_, err := s.db.Exec(`
+		INSERT INTO articles (id, user_id, url, title, domain, content, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, id, userID, rawURL, title, domain, content, now.Format(time.RFC3339))
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			return nil, fmt.Errorf("article already added")
+		}
+		return nil, fmt.Errorf("create article: %w", err)
+	}
+
+	return &models.Article{
+		ID:        id,
+		UserID:    userID,
+		URL:       rawURL,
+		Title:     title,
+		Domain:    domain,
+		Content:   content,
+		CreatedAt: now,
+	}, nil
+}
+
 func (s *ArticleService) List(userID string) ([]models.Article, error) {
 	rows, err := s.db.Query(`
 		SELECT a.id, a.user_id, a.url, a.title, a.domain, a.created_at,

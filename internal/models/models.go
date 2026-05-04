@@ -85,3 +85,17 @@ type WikiImage struct {
 	Description string `json:"description"`
 	Title       string `json:"title"`
 }
+
+const (
+	RoleUser      = "user"
+	RoleAssistant = "assistant"
+)
+
+type ChatMessage struct {
+	ID        string    `json:"id"`
+	ArticleID string    `json:"article_id"`
+	UserID    string    `json:"user_id"`
+	Role      string    `json:"role"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at"`
+}

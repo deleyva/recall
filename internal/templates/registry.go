@@ -24,6 +24,16 @@ func NewRegistry() *Registry {
 			"mod":      func(a, b int) int { return a % b },
 			"ceil":     func(a, b float64) int { return int(math.Ceil(a / b)) },
 			"safeHTML": func(s string) template.HTML { return template.HTML(s) },
+			"dict": func(values ...interface{}) map[string]interface{} {
+				m := make(map[string]interface{})
+				for i := 0; i+1 < len(values); i += 2 {
+					key, ok := values[i].(string)
+					if ok {
+						m[key] = values[i+1]
+					}
+				}
+				return m
+			},
 		},
 	}
 }

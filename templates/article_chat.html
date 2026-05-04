@@ -1,0 +1,61 @@
+{{define "article_chat.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "content"}}
+<div class="flex flex-col h-[calc(100vh-140px)]">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-4">
+        <div>
+            <h1 class="text-xl font-bold">Chat: {{.Article.Title}}</h1>
+            <a href="/to-read" class="text-indigo-600 hover:underline text-sm">&larr; Back to articles</a>
+        </div>
+        {{if .Messages}}
+        <form action="/to-read/{{.Article.ID}}/chat/clear" method="POST"
+            onsubmit="return confirm('Clear all chat history for this article?')">
+            <button type="submit" class="text-red-500 hover:text-red-700 text-sm px-3 py-1 rounded hover:bg-red-50">
+                Clear history
+            </button>
+        </form>
+        {{end}}
+    </div>
+
+    <!-- Messages area -->
+    <div id="chat-messages" class="flex-1 overflow-y-auto space-y-3 mb-4 p-4 bg-white rounded-lg shadow">
+        {{if .Messages}}
+            {{range .Messages}}
+            {{template "chat_message_partial.html" dict "Message" .}}
+            {{end}}
+        {{else}}
+        <div id="chat-empty" class="text-center text-gray-400 py-12">
+            <p class="text-lg mb-1">Ask anything about this article</p>
+            <p class="text-sm">The AI has read the full article and can answer your questions.</p>
+        </div>
+        {{end}}
+    </div>
+
+    <!-- Input area -->
+    {{if .GeminiEnabled}}
+    <form hx-post="/to-read/{{.Article.ID}}/chat"
+          hx-target="#chat-messages"
+          hx-swap="beforeend"
+          hx-on::after-request="this.reset(); document.getElementById('chat-empty')?.remove(); document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;"
+          hx-indicator="#chat-loading"
+          class="flex gap-2">
+        <input type="text" name="message" placeholder="Ask a question about this article..."
+            required autocomplete="off"
+            class="flex-1 rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+        <button type="submit" class="bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 shrink-0">
+            Send
+        </button>
+    </form>
+    <div id="chat-loading" class="htmx-indicator text-center text-gray-400 text-sm py-2">
+        Thinking...
+    </div>
+    {{else}}
+    <div class="text-center text-gray-400 py-4">
+        Gemini API key not configured. Add it in your profile settings.
+    </div>
+    {{end}}
+</div>
+{{end}}

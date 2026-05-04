@@ -75,6 +75,7 @@ func main() {
 	geminiService := services.NewGeminiService(cfg.GeminiAPIKey)
 	tokenService := services.NewTokenService(db)
 	wikipediaService := services.NewWikipediaService()
+	chatService := services.NewChatService(db)
 	cronService := services.NewCronService(db, articleService, cardService, geminiService)
 	readeckService := services.NewReadeckService(db, articleService)
 	sched := scheduler.New()
@@ -103,6 +104,7 @@ func main() {
 	cardHandler := web.NewCardHandler(cardService, deckService, tmpl)
 	reviewHandler := web.NewReviewHandler(reviewService, cardService, deckService, sched, tmpl)
 	articleHandler := web.NewArticleHandler(articleService, cardService, deckService, geminiService, wikipediaService, tmpl)
+	chatHandler := web.NewChatHandler(articleService, chatService, geminiService, tmpl)
 	profileHandler := web.NewProfileHandler(tokenService, tmpl, db)
 
 	// API handler
@@ -162,6 +164,9 @@ func main() {
 	auth.POST("/to-read/:id/generate", articleHandler.GenerateFlashcards)
 	auth.GET("/to-read/:id/images", articleHandler.ArticleImages)
 	auth.GET("/to-read/:id/viewer", articleHandler.ImageViewer)
+	auth.GET("/to-read/:id/chat", chatHandler.ChatPage)
+	auth.POST("/to-read/:id/chat", chatHandler.SendMessage)
+	auth.POST("/to-read/:id/chat/clear", chatHandler.ClearChat)
 	auth.GET("/profile", profileHandler.ProfilePage)
 	auth.POST("/profile/settings", profileHandler.UpdateSettings)
 	auth.POST("/profile/tokens", profileHandler.CreateToken)

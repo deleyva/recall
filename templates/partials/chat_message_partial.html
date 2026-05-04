@@ -1,0 +1,15 @@
+{{define "chat_message_partial.html"}}
+{{if eq .Message.Role "user"}}
+<div class="flex justify-end">
+    <div class="bg-indigo-600 text-white rounded-lg px-4 py-2 max-w-[80%]">
+        <p class="text-sm">{{.Message.Content}}</p>
+    </div>
+</div>
+{{else}}
+<div class="flex justify-start">
+    <div class="bg-gray-100 text-gray-800 rounded-lg px-4 py-2 max-w-[80%]">
+        <div class="text-sm">{{.Message.Content | safeHTML}}</div>
+    </div>
+</div>
+{{end}}
+{{end}}

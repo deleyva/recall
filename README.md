@@ -139,7 +139,7 @@ curl -b cookies http://localhost:8080/api/v1/stats
 
 | # | Feature | Status | Description |
 |---|---------|--------|-------------|
-| F1 | **AI Chat + Development Questions** | 🚧 WIP | Chat interface for discussing articles with AI (Gemini). Persistent chat history per article. Essay questions planned for next iteration |
+| F1 | **AI Chat** | ✅ Done | Per-article chat with Gemini AI. Persistent history, HTML-sanitized responses, multi-turn conversation with article context |
 | F2 | **Daily Podcast via NotebookLM** | 📋 Planned | Auto-generated daily audio overview from recent/pending articles |
 | F3 | **Configurable Daily Flashcards** | ✅ Done | Per-user configurable card limit (default 5/day) |
 | F4 | **Playlist Manager** | 📋 Planned | Link Spotify/YouTube playlists to articles or decks as study material |
@@ -148,6 +148,7 @@ curl -b cookies http://localhost:8080/api/v1/stats
 
 ## Backlog
 
+- **AI essay questions** — daily Socratic questions generated from articles, with AI evaluation
 - **Reading progress tracking** — mark articles as read/in-progress
 - **Spaced repetition analytics** — retention curves, optimal study times
 - **Mobile PWA** — installable web app with offline study

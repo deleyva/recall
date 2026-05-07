@@ -166,6 +166,8 @@ func (s *ArticleService) ListForCardGeneration(userID string) ([]models.Article,
 			COALESCE((SELECT COUNT(*) FROM cards c WHERE c.article_id = a.id), 0) as flashcard_count
 		FROM articles a
 		WHERE a.user_id = ?
+		GROUP BY a.id
+		HAVING flashcard_count < 20
 		ORDER BY flashcard_count ASC, LENGTH(COALESCE(a.content, '')) DESC, a.created_at DESC
 	`, userID)
 	if err != nil {

@@ -47,7 +47,8 @@ func (h *CardHandler) ListCards(c echo.Context) error {
 		"Page":       page,
 		"TotalPages": totalPages,
 		"Total":      total,
-		"Email":      c.Get(middleware.EmailKey),
+		"Email":         c.Get(middleware.EmailKey),
+		"IsAdmin":       middleware.IsAdmin(c),
 	})
 }
 

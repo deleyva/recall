@@ -52,6 +52,20 @@
             </div>
         </div>
 
+        {{if .IsAdmin}}
+        <hr class="border-gray-200">
+
+        <div>
+            <h3 class="text-md font-medium text-gray-800 mb-3">Podcast Generation</h3>
+            <label class="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" name="podcast_enabled" {{if .PodcastEnabled}}checked{{end}}
+                    class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                <span class="text-sm text-gray-700">Auto-generate daily podcast from new articles</span>
+            </label>
+            <p class="text-xs text-gray-500 mt-1 ml-7">A podcast will be queued daily from articles added in the last 24 hours.</p>
+        </div>
+        {{end}}
+
         <button type="submit" class="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700">Save Settings</button>
     </form>
 </div>

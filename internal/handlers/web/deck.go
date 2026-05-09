@@ -31,7 +31,8 @@ func (h *DeckHandler) Dashboard(c echo.Context) error {
 	return h.tmpl.ExecuteTemplate(c.Response(), "dashboard.html", map[string]interface{}{
 		"Decks": decks,
 		"Stats": stats,
-		"Email": c.Get(middleware.EmailKey),
+		"Email":         c.Get(middleware.EmailKey),
+		"IsAdmin":       middleware.IsAdmin(c),
 	})
 }
 
@@ -67,7 +68,8 @@ func (h *DeckHandler) ViewDeck(c echo.Context) error {
 
 	return h.tmpl.ExecuteTemplate(c.Response(), "deck_view.html", map[string]interface{}{
 		"Deck":  deck,
-		"Email": c.Get(middleware.EmailKey),
+		"Email":         c.Get(middleware.EmailKey),
+		"IsAdmin":       middleware.IsAdmin(c),
 	})
 }
 

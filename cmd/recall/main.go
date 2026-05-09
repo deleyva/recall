@@ -63,6 +63,21 @@ func main() {
 				fmt.Println(e)
 			}
 			return
+		case "set-admin":
+			if len(os.Args) < 3 {
+				fmt.Println("Usage: recall set-admin <email>")
+				os.Exit(1)
+			}
+			result, err := db.Exec("UPDATE users SET is_admin = 1 WHERE email = ?", os.Args[2])
+			if err != nil {
+				log.Fatalf("Failed: %v", err)
+			}
+			rows, _ := result.RowsAffected()
+			if rows == 0 {
+				log.Fatalf("User not found: %s", os.Args[2])
+			}
+			fmt.Printf("User %s is now admin\n", os.Args[2])
+			return
 		}
 	}
 
@@ -76,7 +91,8 @@ func main() {
 	tokenService := services.NewTokenService(db)
 	wikipediaService := services.NewWikipediaService()
 	chatService := services.NewChatService(db)
-	cronService := services.NewCronService(db, articleService, cardService, geminiService)
+	podcastService := services.NewPodcastService(db)
+	cronService := services.NewCronService(db, articleService, cardService, geminiService, podcastService)
 	readeckService := services.NewReadeckService(db, articleService)
 	sched := scheduler.New()
 
@@ -105,18 +121,20 @@ func main() {
 	reviewHandler := web.NewReviewHandler(reviewService, cardService, deckService, sched, tmpl)
 	articleHandler := web.NewArticleHandler(articleService, cardService, deckService, geminiService, wikipediaService, tmpl)
 	chatHandler := web.NewChatHandler(articleService, chatService, geminiService, tmpl)
+	podcastHandler := web.NewPodcastHandler(podcastService, articleService, tmpl)
 	profileHandler := web.NewProfileHandler(tokenService, tmpl, db)
 
 	// API handler
-	apiHandler := api.NewHandler(authService, deckService, cardService, reviewService, articleService, geminiService, sched, authMw)
+	apiHandler := api.NewHandler(authService, deckService, cardService, reviewService, articleService, geminiService, podcastService, sched, authMw)
 
 	// Start cron jobs
 	c := cron.New()
 	c.AddFunc("0 1 * * *", cronService.GenerateDailyCards)       // 1:00 AM daily
+	c.AddFunc("0 2 * * *", cronService.GenerateDailyPodcasts)  // 2:00 AM daily
 	c.AddFunc("*/15 * * * *", readeckService.SyncAllUsers)       // every 15 min
 	c.Start()
 	defer c.Stop()
-	log.Println("Cron scheduler started (cards at 1:00 AM, Readeck sync every 15 min)")
+	log.Println("Cron scheduler started (cards at 1:00 AM, podcasts at 2:00 AM, Readeck sync every 15 min)")
 
 	// Echo server
 	e := echo.New()
@@ -167,6 +185,9 @@ func main() {
 	auth.GET("/to-read/:id/chat", chatHandler.ChatPage)
 	auth.POST("/to-read/:id/chat", chatHandler.SendMessage)
 	auth.POST("/to-read/:id/chat/clear", chatHandler.ClearChat)
+	auth.GET("/podcasts", podcastHandler.ListPage)
+	auth.POST("/podcasts", podcastHandler.CreatePodcast)
+	auth.POST("/podcasts/:id/delete", podcastHandler.DeletePodcast)
 	auth.GET("/profile", profileHandler.ProfilePage)
 	auth.POST("/profile/settings", profileHandler.UpdateSettings)
 	auth.POST("/profile/tokens", profileHandler.CreateToken)
@@ -200,6 +221,8 @@ func main() {
 	apiAuth.POST("/articles", apiHandler.CreateArticle)
 	apiAuth.DELETE("/articles/:id", apiHandler.DeleteArticle)
 	apiAuth.POST("/articles/:id/generate", apiHandler.GenerateArticleCards)
+	apiAuth.GET("/podcasts/pending", apiHandler.ListPendingPodcasts)
+	apiAuth.PUT("/podcasts/:id/status", apiHandler.UpdatePodcastStatus)
 
 	log.Printf("Recall starting on :%s", cfg.Port)
 	e.Logger.Fatal(e.Start(fmt.Sprintf(":%s", cfg.Port)))

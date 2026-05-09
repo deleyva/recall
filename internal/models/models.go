@@ -9,6 +9,7 @@ type User struct {
 	DailyCardLimit   int       `json:"daily_card_limit"`
 	ReadeckURL       string    `json:"-"`
 	ReadeckAPIToken  string    `json:"-"`
+	IsAdmin          bool      `json:"is_admin"`
 	CreatedAt        time.Time `json:"created_at"`
 }
 
@@ -98,4 +99,29 @@ type ChatMessage struct {
 	Role      string    `json:"role"`
 	Content   string    `json:"content"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+const (
+	PodcastStatusPending    = "pending"
+	PodcastStatusProcessing = "processing"
+	PodcastStatusCompleted  = "completed"
+	PodcastStatusFailed     = "failed"
+)
+
+type Podcast struct {
+	ID           string    `json:"id"`
+	UserID       string    `json:"user_id"`
+	Title        string    `json:"title"`
+	Status       string    `json:"status"`
+	AudioURL     string    `json:"audio_url,omitempty"`
+	NotebookID   string    `json:"notebook_id,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	CompletedAt  time.Time `json:"completed_at,omitempty"`
+	ArticleCount int       `json:"article_count,omitempty"`
+	Articles     []Article `json:"articles,omitempty"`
+}
+
+type PodcastArticle struct {
+	PodcastID string `json:"podcast_id"`
+	ArticleID string `json:"article_id"`
 }

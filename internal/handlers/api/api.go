@@ -19,11 +19,12 @@ type Handler struct {
 	reviews   *services.ReviewService
 	articles  *services.ArticleService
 	gemini    *services.GeminiService
+	podcasts  *services.PodcastService
 	scheduler *scheduler.Scheduler
 	authMw    *middleware.AuthMiddleware
 }
 
-func NewHandler(auth *services.AuthService, decks *services.DeckService, cards *services.CardService, reviews *services.ReviewService, articles *services.ArticleService, gemini *services.GeminiService, sched *scheduler.Scheduler, authMw *middleware.AuthMiddleware) *Handler {
+func NewHandler(auth *services.AuthService, decks *services.DeckService, cards *services.CardService, reviews *services.ReviewService, articles *services.ArticleService, gemini *services.GeminiService, podcasts *services.PodcastService, sched *scheduler.Scheduler, authMw *middleware.AuthMiddleware) *Handler {
 	return &Handler{
 		auth:      auth,
 		decks:     decks,
@@ -31,6 +32,7 @@ func NewHandler(auth *services.AuthService, decks *services.DeckService, cards *
 		reviews:   reviews,
 		articles:  articles,
 		gemini:    gemini,
+		podcasts:  podcasts,
 		scheduler: sched,
 		authMw:    authMw,
 	}
@@ -83,6 +85,7 @@ func (h *Handler) Login(c echo.Context) error {
 	sess, _ := h.authMw.GetStore().Get(c.Request(), middleware.SessionName)
 	sess.Values[middleware.UserIDKey] = user.ID
 	sess.Values[middleware.EmailKey] = user.Email
+	sess.Values[middleware.IsAdminKey] = user.IsAdmin
 	sess.Save(c.Request(), c.Response())
 
 	return c.JSON(http.StatusOK, user)
@@ -452,4 +455,44 @@ func (h *Handler) GenerateArticleCards(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"generated": count,
 	})
+}
+
+// Podcast API endpoints
+
+func (h *Handler) ListPendingPodcasts(c echo.Context) error {
+	podcasts, err := h.podcasts.ListPending()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if podcasts == nil {
+		podcasts = []models.Podcast{}
+	}
+	return c.JSON(http.StatusOK, podcasts)
+}
+
+func (h *Handler) UpdatePodcastStatus(c echo.Context) error {
+	podcastID := c.Param("id")
+	var req struct {
+		Status     string `json:"status"`
+		AudioURL   string `json:"audio_url"`
+		NotebookID string `json:"notebook_id"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	validStatuses := map[string]bool{
+		models.PodcastStatusProcessing: true,
+		models.PodcastStatusCompleted:  true,
+		models.PodcastStatusFailed:     true,
+	}
+	if !validStatuses[req.Status] {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid status"})
+	}
+
+	if err := h.podcasts.UpdateStatus(podcastID, req.Status, req.AudioURL, req.NotebookID); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "updated"})
 }

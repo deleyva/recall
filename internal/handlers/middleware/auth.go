@@ -13,6 +13,7 @@ const (
 	SessionName = "recall-session"
 	UserIDKey   = "user_id"
 	EmailKey    = "email"
+	IsAdminKey  = "is_admin"
 )
 
 type AuthMiddleware struct {
@@ -37,8 +38,10 @@ func (m *AuthMiddleware) RequireAuth(next echo.HandlerFunc) echo.HandlerFunc {
 			userID, ok := sess.Values[UserIDKey].(string)
 			if ok {
 				email, _ := sess.Values[EmailKey].(string)
+				isAdmin, _ := sess.Values[IsAdminKey].(bool)
 				c.Set(UserIDKey, userID)
 				c.Set(EmailKey, email)
+				c.Set(IsAdminKey, isAdmin)
 				return next(c)
 			}
 		}
@@ -72,6 +75,13 @@ func GetUserID(c echo.Context) string {
 		return id
 	}
 	return ""
+}
+
+func IsAdmin(c echo.Context) bool {
+	if admin, ok := c.Get(IsAdminKey).(bool); ok {
+		return admin
+	}
+	return false
 }
 
 func isAPIRequest(c echo.Context) bool {

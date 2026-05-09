@@ -44,7 +44,8 @@ func (h *ChatHandler) ChatPage(c echo.Context) error {
 	return h.tmpl.ExecuteTemplate(c.Response(), "article_chat.html", map[string]interface{}{
 		"Article":        article,
 		"Messages":       messages,
-		"Email":          c.Get(middleware.EmailKey),
+		"Email":         c.Get(middleware.EmailKey),
+		"IsAdmin":       middleware.IsAdmin(c),
 		"GeminiEnabled":  h.gemini.IsConfigured(),
 	})
 }

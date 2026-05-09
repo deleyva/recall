@@ -38,6 +38,7 @@ func (h *AuthHandler) Login(c echo.Context) error {
 	sess, _ := h.store.Get(c.Request(), middleware.SessionName)
 	sess.Values[middleware.UserIDKey] = user.ID
 	sess.Values[middleware.EmailKey] = user.Email
+	sess.Values[middleware.IsAdminKey] = user.IsAdmin
 	sess.Save(c.Request(), c.Response())
 
 	return c.Redirect(http.StatusSeeOther, "/")

@@ -94,10 +94,11 @@ func (s *AuthService) Login(email, password string) (*models.User, error) {
 	var hash string
 	var createdAt string
 
+	var isAdmin int
 	err := s.db.QueryRow(
-		"SELECT id, email, password_hash, created_at FROM users WHERE email = ?",
+		"SELECT id, email, password_hash, created_at, is_admin FROM users WHERE email = ?",
 		email,
-	).Scan(&user.ID, &user.Email, &hash, &createdAt)
+	).Scan(&user.ID, &user.Email, &hash, &createdAt, &isAdmin)
 	if err != nil {
 		return nil, ErrInvalidCredentials
 	}
@@ -107,5 +108,6 @@ func (s *AuthService) Login(email, password string) (*models.User, error) {
 	}
 
 	user.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	user.IsAdmin = isAdmin == 1
 	return &user, nil
 }

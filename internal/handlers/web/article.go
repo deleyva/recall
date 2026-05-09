@@ -41,6 +41,7 @@ func (h *ArticleHandler) ListPage(c echo.Context) error {
 	return h.tmpl.ExecuteTemplate(c.Response(), "to_read.html", map[string]interface{}{
 		"Articles":      articles,
 		"Email":         c.Get(middleware.EmailKey),
+		"IsAdmin":       middleware.IsAdmin(c),
 		"Error":         c.QueryParam("error"),
 		"Success":       c.QueryParam("success"),
 		"GeminiEnabled": h.gemini.IsConfigured(),
@@ -184,6 +185,7 @@ func (h *ArticleHandler) ImageViewer(c echo.Context) error {
 
 	return h.tmpl.ExecuteTemplate(c.Response(), "image_viewer.html", map[string]interface{}{
 		"Article": article,
-		"Email":   c.Get(middleware.EmailKey),
+		"Email":         c.Get(middleware.EmailKey),
+		"IsAdmin":       middleware.IsAdmin(c),
 	})
 }

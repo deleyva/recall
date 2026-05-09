@@ -29,20 +29,23 @@ func (h *ProfileHandler) ProfilePage(c echo.Context) error {
 
 	var dailyCardLimit int
 	var readeckURL, readeckToken string
-	h.db.QueryRow("SELECT daily_card_limit, readeck_url, readeck_api_token FROM users WHERE id = ?", userID).Scan(&dailyCardLimit, &readeckURL, &readeckToken)
+	var podcastEnabled int
+	h.db.QueryRow("SELECT daily_card_limit, readeck_url, readeck_api_token, podcast_enabled FROM users WHERE id = ?", userID).Scan(&dailyCardLimit, &readeckURL, &readeckToken, &podcastEnabled)
 	if dailyCardLimit == 0 {
 		dailyCardLimit = 5
 	}
 
 	return h.tmpl.ExecuteTemplate(c.Response(), "profile.html", map[string]interface{}{
 		"Tokens":         tokens,
-		"Email":          c.Get(middleware.EmailKey),
+		"Email":         c.Get(middleware.EmailKey),
+		"IsAdmin":       middleware.IsAdmin(c),
 		"NewToken":       c.QueryParam("new_token"),
 		"Error":          c.QueryParam("error"),
 		"Success":        c.QueryParam("success"),
 		"DailyCardLimit": dailyCardLimit,
 		"ReadeckURL":     readeckURL,
 		"ReadeckToken":   readeckToken,
+		"PodcastEnabled": podcastEnabled == 1,
 	})
 }
 
@@ -57,9 +60,14 @@ func (h *ProfileHandler) UpdateSettings(c echo.Context) error {
 	readeckURL := strings.TrimSpace(c.FormValue("readeck_url"))
 	readeckToken := strings.TrimSpace(c.FormValue("readeck_api_token"))
 
+	podcastEnabled := 0
+	if c.FormValue("podcast_enabled") == "on" {
+		podcastEnabled = 1
+	}
+
 	_, err = h.db.Exec(
-		"UPDATE users SET daily_card_limit = ?, readeck_url = ?, readeck_api_token = ? WHERE id = ?",
-		limit, readeckURL, readeckToken, userID,
+		"UPDATE users SET daily_card_limit = ?, readeck_url = ?, readeck_api_token = ?, podcast_enabled = ? WHERE id = ?",
+		limit, readeckURL, readeckToken, podcastEnabled, userID,
 	)
 	if err != nil {
 		return c.Redirect(http.StatusSeeOther, "/profile?error="+fmt.Sprintf("Failed+to+save:+%v", err))

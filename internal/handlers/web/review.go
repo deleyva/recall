@@ -47,7 +47,8 @@ func (h *ReviewHandler) StudyPage(c echo.Context) error {
 	data := map[string]interface{}{
 		"Deck":     deck,
 		"DueCount": dueCount,
-		"Email":    c.Get(middleware.EmailKey),
+		"Email":         c.Get(middleware.EmailKey),
+		"IsAdmin":       middleware.IsAdmin(c),
 	}
 
 	if card == nil {
@@ -145,6 +146,7 @@ func (h *ReviewHandler) StatsPage(c echo.Context) error {
 	return h.tmpl.ExecuteTemplate(c.Response(), "stats.html", map[string]interface{}{
 		"Stats":   stats,
 		"History": history,
-		"Email":   c.Get(middleware.EmailKey),
+		"Email":         c.Get(middleware.EmailKey),
+		"IsAdmin":       middleware.IsAdmin(c),
 	})
 }

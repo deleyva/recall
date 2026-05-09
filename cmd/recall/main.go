@@ -63,6 +63,23 @@ func main() {
 				fmt.Println(e)
 			}
 			return
+		case "create-token":
+			if len(os.Args) < 4 {
+				fmt.Println("Usage: recall create-token <email> <token-name>")
+				os.Exit(1)
+			}
+			tokenSvc := services.NewTokenService(db)
+			var userID string
+			err := db.QueryRow("SELECT id FROM users WHERE email = ?", os.Args[2]).Scan(&userID)
+			if err != nil {
+				log.Fatalf("User not found: %s", os.Args[2])
+			}
+			rawToken, _, err := tokenSvc.Create(userID, os.Args[3])
+			if err != nil {
+				log.Fatalf("Failed: %v", err)
+			}
+			fmt.Println(rawToken)
+			return
 		case "set-admin":
 			if len(os.Args) < 3 {
 				fmt.Println("Usage: recall set-admin <email>")

@@ -172,32 +172,36 @@ func (s *PodcastService) ListPending() ([]models.Podcast, error) {
 	}
 	defer rows.Close()
 
+	// Collect podcasts first, then load articles (avoid nested queries on SQLite)
 	var podcasts []models.Podcast
 	for rows.Next() {
 		p, err := scanPodcast(rows)
 		if err != nil {
 			return nil, err
 		}
+		podcasts = append(podcasts, *p)
+	}
 
-		// Load article content for each pending podcast
+	// Now load article content for each podcast
+	for i := range podcasts {
 		artRows, err := s.db.Query(`
 			SELECT a.id, a.title, a.url, a.content
 			FROM articles a
 			JOIN podcast_articles pa ON pa.article_id = a.id
 			WHERE pa.podcast_id = ?
-		`, p.ID)
-		if err == nil {
-			for artRows.Next() {
-				var a models.Article
-				if err := artRows.Scan(&a.ID, &a.Title, &a.URL, &a.Content); err == nil {
-					p.Articles = append(p.Articles, a)
-				}
-			}
-			artRows.Close()
+		`, podcasts[i].ID)
+		if err != nil {
+			continue
 		}
-
-		podcasts = append(podcasts, *p)
+		for artRows.Next() {
+			var a models.Article
+			if err := artRows.Scan(&a.ID, &a.Title, &a.URL, &a.Content); err == nil {
+				podcasts[i].Articles = append(podcasts[i].Articles, a)
+			}
+		}
+		artRows.Close()
 	}
+
 	return podcasts, nil
 }
 

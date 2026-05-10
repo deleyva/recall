@@ -125,3 +125,41 @@ type PodcastArticle struct {
 	PodcastID string `json:"podcast_id"`
 	ArticleID string `json:"article_id"`
 }
+
+const (
+	PlaylistTypeSpotify  = "spotify"
+	PlaylistTypeYouTube  = "youtube"
+)
+
+type Playlist struct {
+	ID          string    `json:"id"`
+	UserID      string    `json:"user_id"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	URL         string    `json:"url"`
+	Type        string    `json:"type"`
+	ExternalID  string    `json:"external_id"`
+	CreatedAt   time.Time `json:"created_at"`
+	Articles    []Article `json:"articles,omitempty"`
+	Decks       []Deck    `json:"decks,omitempty"`
+}
+
+func (p Playlist) EmbedURL() string {
+	switch p.Type {
+	case PlaylistTypeSpotify:
+		return "https://open.spotify.com/embed/playlist/" + p.ExternalID
+	case PlaylistTypeYouTube:
+		return "https://www.youtube.com/embed/videoseries?list=" + p.ExternalID
+	}
+	return p.URL
+}
+
+type PlaylistArticle struct {
+	PlaylistID string `json:"playlist_id"`
+	ArticleID  string `json:"article_id"`
+}
+
+type PlaylistDeck struct {
+	PlaylistID string `json:"playlist_id"`
+	DeckID     string `json:"deck_id"`
+}

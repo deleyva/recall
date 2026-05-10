@@ -1,0 +1,96 @@
+{{define "playlist_detail.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "content"}}
+<div class="flex justify-between items-center mb-6">
+    <div>
+        <h1 class="text-2xl font-bold">{{if .Playlist.Title}}{{.Playlist.Title}}{{else}}Playlist{{end}}</h1>
+        {{if .Playlist.Description}}<p class="text-gray-500">{{.Playlist.Description}}</p>{{end}}
+    </div>
+    <div class="flex gap-2">
+        <a href="{{.Playlist.URL}}" target="_blank" rel="noopener" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 text-sm">Open Original</a>
+        <form action="/playlists/{{.Playlist.ID}}/delete" method="POST" class="inline" onsubmit="return confirm('Delete this playlist?')">
+            <button type="submit" class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 text-sm">Delete</button>
+        </form>
+    </div>
+</div>
+
+<!-- Embed Player -->
+<div class="bg-white rounded-lg shadow p-4 mb-8">
+    {{if eq .Playlist.Type "spotify"}}
+    <iframe style="border-radius:12px" src="{{.Playlist.EmbedURL}}" width="100%" height="352" frameBorder="0"
+        allowfullscreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
+    {{else}}
+    <iframe width="100%" height="400" src="{{.Playlist.EmbedURL}}" frameBorder="0"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe>
+    {{end}}
+</div>
+
+<!-- Linked Items -->
+<div id="linked-items">
+{{template "linked_items_inner" .}}
+</div>
+
+<a href="/playlists" class="text-indigo-600 hover:underline">&larr; Back to playlists</a>
+{{end}}
+
+{{define "linked_items_inner"}}
+<!-- Linked Articles -->
+<div class="bg-white rounded-lg shadow p-6 mb-6">
+    <h2 class="text-lg font-semibold mb-4">Linked Articles</h2>
+    {{if .Playlist.Articles}}
+    <ul class="divide-y mb-4">
+        {{range .Playlist.Articles}}
+        <li class="flex items-center justify-between py-2">
+            <a href="{{.URL}}" target="_blank" rel="noopener" class="text-indigo-600 hover:underline text-sm">{{if .Title}}{{.Title}}{{else}}{{.URL}}{{end}}</a>
+            <form hx-post="/playlists/{{$.Playlist.ID}}/unlink-article/{{.ID}}" hx-target="#linked-items" hx-swap="innerHTML">
+                <button type="submit" class="text-red-400 hover:text-red-600 text-xs px-2 py-1">Unlink</button>
+            </form>
+        </li>
+        {{end}}
+    </ul>
+    {{else}}
+    <p class="text-gray-400 text-sm mb-4">No articles linked yet.</p>
+    {{end}}
+    {{if .AllArticles}}
+    <form hx-post="/playlists/{{.Playlist.ID}}/link-article" hx-target="#linked-items" hx-swap="innerHTML" class="flex gap-2">
+        <select name="article_id" class="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm">
+            {{range .AllArticles}}
+            <option value="{{.ID}}">{{if .Title}}{{.Title}}{{else}}{{.URL}}{{end}}</option>
+            {{end}}
+        </select>
+        <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 text-sm">Link</button>
+    </form>
+    {{end}}
+</div>
+
+<!-- Linked Decks -->
+<div class="bg-white rounded-lg shadow p-6 mb-6">
+    <h2 class="text-lg font-semibold mb-4">Linked Decks</h2>
+    {{if .Playlist.Decks}}
+    <ul class="divide-y mb-4">
+        {{range .Playlist.Decks}}
+        <li class="flex items-center justify-between py-2">
+            <a href="/decks/{{.ID}}" class="text-indigo-600 hover:underline text-sm">{{.Name}}</a>
+            <form hx-post="/playlists/{{$.Playlist.ID}}/unlink-deck/{{.ID}}" hx-target="#linked-items" hx-swap="innerHTML">
+                <button type="submit" class="text-red-400 hover:text-red-600 text-xs px-2 py-1">Unlink</button>
+            </form>
+        </li>
+        {{end}}
+    </ul>
+    {{else}}
+    <p class="text-gray-400 text-sm mb-4">No decks linked yet.</p>
+    {{end}}
+    {{if .AllDecks}}
+    <form hx-post="/playlists/{{.Playlist.ID}}/link-deck" hx-target="#linked-items" hx-swap="innerHTML" class="flex gap-2">
+        <select name="deck_id" class="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm">
+            {{range .AllDecks}}
+            <option value="{{.ID}}">{{.Name}}</option>
+            {{end}}
+        </select>
+        <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 text-sm">Link</button>
+    </form>
+    {{end}}
+</div>
+{{end}}

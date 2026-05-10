@@ -20,11 +20,12 @@ type Handler struct {
 	articles  *services.ArticleService
 	gemini    *services.GeminiService
 	podcasts  *services.PodcastService
+	playlists *services.PlaylistService
 	scheduler *scheduler.Scheduler
 	authMw    *middleware.AuthMiddleware
 }
 
-func NewHandler(auth *services.AuthService, decks *services.DeckService, cards *services.CardService, reviews *services.ReviewService, articles *services.ArticleService, gemini *services.GeminiService, podcasts *services.PodcastService, sched *scheduler.Scheduler, authMw *middleware.AuthMiddleware) *Handler {
+func NewHandler(auth *services.AuthService, decks *services.DeckService, cards *services.CardService, reviews *services.ReviewService, articles *services.ArticleService, gemini *services.GeminiService, podcasts *services.PodcastService, playlists *services.PlaylistService, sched *scheduler.Scheduler, authMw *middleware.AuthMiddleware) *Handler {
 	return &Handler{
 		auth:      auth,
 		decks:     decks,
@@ -33,6 +34,7 @@ func NewHandler(auth *services.AuthService, decks *services.DeckService, cards *
 		articles:  articles,
 		gemini:    gemini,
 		podcasts:  podcasts,
+		playlists: playlists,
 		scheduler: sched,
 		authMw:    authMw,
 	}
@@ -468,6 +470,102 @@ func (h *Handler) ListPendingPodcasts(c echo.Context) error {
 		podcasts = []models.Podcast{}
 	}
 	return c.JSON(http.StatusOK, podcasts)
+}
+
+// Playlist API endpoints
+
+func (h *Handler) ListPlaylists(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	playlists, err := h.playlists.List(userID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if playlists == nil {
+		playlists = []models.Playlist{}
+	}
+	return c.JSON(http.StatusOK, playlists)
+}
+
+func (h *Handler) CreatePlaylist(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	var req struct {
+		URL         string `json:"url"`
+		Title       string `json:"title"`
+		Description string `json:"description"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	if req.URL == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "url required"})
+	}
+
+	playlist, err := h.playlists.Create(userID, req.URL, req.Title, req.Description)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusCreated, playlist)
+}
+
+func (h *Handler) GetPlaylist(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	playlist, err := h.playlists.Get(userID, c.Param("id"))
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "playlist not found"})
+	}
+	return c.JSON(http.StatusOK, playlist)
+}
+
+func (h *Handler) DeletePlaylist(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	if err := h.playlists.Delete(userID, c.Param("id")); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "playlist not found"})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"message": "deleted"})
+}
+
+func (h *Handler) LinkPlaylistArticle(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	var req struct {
+		ArticleID string `json:"article_id"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	if err := h.playlists.LinkArticle(userID, c.Param("id"), req.ArticleID); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"message": "linked"})
+}
+
+func (h *Handler) UnlinkPlaylistArticle(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	if err := h.playlists.UnlinkArticle(userID, c.Param("id"), c.Param("articleID")); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"message": "unlinked"})
+}
+
+func (h *Handler) LinkPlaylistDeck(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	var req struct {
+		DeckID string `json:"deck_id"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+	if err := h.playlists.LinkDeck(userID, c.Param("id"), req.DeckID); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"message": "linked"})
+}
+
+func (h *Handler) UnlinkPlaylistDeck(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	if err := h.playlists.UnlinkDeck(userID, c.Param("id"), c.Param("deckID")); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"message": "unlinked"})
 }
 
 func (h *Handler) UpdatePodcastStatus(c echo.Context) error {

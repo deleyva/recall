@@ -4,7 +4,7 @@
 
 {{define "content"}}
 <h1 class="text-2xl font-bold mb-6">Edit Card</h1>
-<form method="POST" action="/decks/{{.DeckID}}/cards/{{.Card.ID}}" class="bg-white shadow rounded-lg p-6 max-w-lg space-y-4">
+<form method="POST" action="/decks/{{.DeckID}}/cards/{{.Card.ID}}" class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 max-w-lg space-y-4">
     <div>
         <label class="block text-sm font-medium text-gray-700 mb-1">Front</label>
         <textarea name="front" rows="3" required class="w-full border rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500">{{.Card.Front}}</textarea>

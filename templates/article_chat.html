@@ -21,7 +21,7 @@
     </div>
 
     <!-- Messages area -->
-    <div id="chat-messages" class="flex-1 overflow-y-auto space-y-3 mb-4 p-4 bg-white rounded-lg shadow">
+    <div id="chat-messages" class="flex-1 overflow-y-auto space-y-3 mb-4 p-4 bg-white dark:bg-gray-800 rounded-lg shadow">
         {{if .Messages}}
             {{range .Messages}}
             {{template "chat_message_partial.html" dict "Message" .}}
@@ -44,7 +44,7 @@
           class="flex gap-2">
         <input type="text" name="message" placeholder="Ask a question about this article..."
             required autocomplete="off"
-            class="flex-1 rounded-lg border border-gray-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            class="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500">
         <button type="submit" class="bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 shrink-0">
             Send
         </button>

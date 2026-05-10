@@ -17,21 +17,21 @@
 
 <!-- Create Podcast -->
 {{if .Articles}}
-<div class="bg-white rounded-lg shadow p-6 mb-8">
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-8">
     <h2 class="text-lg font-semibold mb-4">Generate New Podcast</h2>
     <form action="/podcasts" method="POST">
         <div class="mb-4">
             <label for="title" class="block text-sm font-medium text-gray-700 mb-1">Title</label>
             <input type="text" name="title" id="title" placeholder="Daily Podcast" value=""
-                class="w-full max-w-md rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                class="w-full max-w-md rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
         </div>
         <div class="mb-4">
             <p class="text-sm font-medium text-gray-700 mb-2">Select articles (max 10):</p>
             <div class="max-h-64 overflow-y-auto border rounded-lg p-3 space-y-2">
                 {{range .Articles}}
-                <label class="flex items-start gap-2 p-2 rounded hover:bg-gray-50 cursor-pointer">
+                <label class="flex items-start gap-2 p-2 rounded hover:bg-gray-50 dark:bg-gray-700 cursor-pointer">
                     <input type="checkbox" name="article_ids" value="{{.ID}}"
-                        class="mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                        class="mt-1 rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
                     <div>
                         <span class="text-sm font-medium">{{.Title}}</span>
                         <span class="text-xs text-gray-400 block">{{.Domain}}</span>
@@ -49,9 +49,9 @@
 
 <!-- Podcast History -->
 {{if .Podcasts}}
-<div class="bg-white rounded-lg shadow overflow-hidden">
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
     <table class="w-full">
-        <thead class="bg-gray-50 border-b">
+        <thead class="bg-gray-50 dark:bg-gray-700 border-b">
             <tr>
                 <th class="text-left px-4 py-3 text-sm font-medium text-gray-500">Title</th>
                 <th class="text-center px-4 py-3 text-sm font-medium text-gray-500">Articles</th>

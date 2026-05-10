@@ -17,7 +17,7 @@
 </div>
 
 <!-- Embed Player -->
-<div class="bg-white rounded-lg shadow p-4 mb-8">
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-8">
     {{if eq .Playlist.Type "spotify"}}
     <iframe style="border-radius:12px" src="{{.Playlist.EmbedURL}}" width="100%" height="352" frameBorder="0"
         allowfullscreen="" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
@@ -37,7 +37,7 @@
 
 {{define "linked_items_inner"}}
 <!-- Linked Articles -->
-<div class="bg-white rounded-lg shadow p-6 mb-6">
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
     <h2 class="text-lg font-semibold mb-4">Linked Articles</h2>
     {{if .Playlist.Articles}}
     <ul class="divide-y mb-4">
@@ -55,7 +55,7 @@
     {{end}}
     {{if .AllArticles}}
     <form hx-post="/playlists/{{.Playlist.ID}}/link-article" hx-target="#linked-items" hx-swap="innerHTML" class="flex gap-2">
-        <select name="article_id" class="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <select name="article_id" class="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm">
             {{range .AllArticles}}
             <option value="{{.ID}}">{{if .Title}}{{.Title}}{{else}}{{.URL}}{{end}}</option>
             {{end}}
@@ -66,7 +66,7 @@
 </div>
 
 <!-- Linked Decks -->
-<div class="bg-white rounded-lg shadow p-6 mb-6">
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
     <h2 class="text-lg font-semibold mb-4">Linked Decks</h2>
     {{if .Playlist.Decks}}
     <ul class="divide-y mb-4">
@@ -84,7 +84,7 @@
     {{end}}
     {{if .AllDecks}}
     <form hx-post="/playlists/{{.Playlist.ID}}/link-deck" hx-target="#linked-items" hx-swap="innerHTML" class="flex gap-2">
-        <select name="deck_id" class="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm">
+        <select name="deck_id" class="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm">
             {{range .AllDecks}}
             <option value="{{.ID}}">{{.Name}}</option>
             {{end}}

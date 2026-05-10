@@ -175,6 +175,11 @@ func (s *CronService) GenerateDailyPodcasts() {
 		artRows, err := s.db.Query(`
 			SELECT id, title FROM articles
 			WHERE user_id = ? AND created_at > ?
+			  AND id NOT IN (
+			    SELECT pa.article_id FROM podcast_articles pa
+			    JOIN podcasts p ON p.id = pa.podcast_id
+			    WHERE p.status = 'completed'
+			  )
 			ORDER BY created_at DESC
 			LIMIT 10
 		`, userID, yesterday)

@@ -28,24 +28,32 @@ func (h *ProfileHandler) ProfilePage(c echo.Context) error {
 	tokens, _ := h.tokens.List(userID)
 
 	var dailyCardLimit int
-	var readeckURL, readeckToken string
+	var readeckURL, readeckToken, flashcardPrompt string
 	var podcastEnabled int
-	h.db.QueryRow("SELECT daily_card_limit, readeck_url, readeck_api_token, podcast_enabled FROM users WHERE id = ?", userID).Scan(&dailyCardLimit, &readeckURL, &readeckToken, &podcastEnabled)
+	h.db.QueryRow("SELECT daily_card_limit, readeck_url, readeck_api_token, podcast_enabled, flashcard_prompt FROM users WHERE id = ?", userID).Scan(&dailyCardLimit, &readeckURL, &readeckToken, &podcastEnabled, &flashcardPrompt)
 	if dailyCardLimit == 0 {
 		dailyCardLimit = 5
 	}
 
+	// Show the user's custom prompt, or the system default if none set
+	displayPrompt := flashcardPrompt
+	if displayPrompt == "" {
+		displayPrompt = services.DefaultFlashcardPrompt
+	}
+
 	return h.tmpl.ExecuteTemplate(c.Response(), "profile.html", map[string]interface{}{
-		"Tokens":         tokens,
-		"Email":         c.Get(middleware.EmailKey),
-		"IsAdmin":       middleware.IsAdmin(c),
-		"NewToken":       c.QueryParam("new_token"),
-		"Error":          c.QueryParam("error"),
-		"Success":        c.QueryParam("success"),
-		"DailyCardLimit": dailyCardLimit,
-		"ReadeckURL":     readeckURL,
-		"ReadeckToken":   readeckToken,
-		"PodcastEnabled": podcastEnabled == 1,
+		"Tokens":          tokens,
+		"Email":           c.Get(middleware.EmailKey),
+		"IsAdmin":         middleware.IsAdmin(c),
+		"NewToken":        c.QueryParam("new_token"),
+		"Error":           c.QueryParam("error"),
+		"Success":         c.QueryParam("success"),
+		"DailyCardLimit":  dailyCardLimit,
+		"ReadeckURL":      readeckURL,
+		"ReadeckToken":    readeckToken,
+		"PodcastEnabled":  podcastEnabled == 1,
+		"FlashcardPrompt": displayPrompt,
+		"IsDefaultPrompt": flashcardPrompt == "",
 	})
 }
 
@@ -59,6 +67,12 @@ func (h *ProfileHandler) UpdateSettings(c echo.Context) error {
 
 	readeckURL := strings.TrimSpace(c.FormValue("readeck_url"))
 	readeckToken := strings.TrimSpace(c.FormValue("readeck_api_token"))
+	flashcardPrompt := strings.TrimSpace(c.FormValue("flashcard_prompt"))
+
+	// If the user submitted the default prompt unchanged, store empty (= use system default)
+	if flashcardPrompt == services.DefaultFlashcardPrompt {
+		flashcardPrompt = ""
+	}
 
 	podcastEnabled := 0
 	if c.FormValue("podcast_enabled") == "on" {
@@ -66,8 +80,8 @@ func (h *ProfileHandler) UpdateSettings(c echo.Context) error {
 	}
 
 	_, err = h.db.Exec(
-		"UPDATE users SET daily_card_limit = ?, readeck_url = ?, readeck_api_token = ?, podcast_enabled = ? WHERE id = ?",
-		limit, readeckURL, readeckToken, podcastEnabled, userID,
+		"UPDATE users SET daily_card_limit = ?, readeck_url = ?, readeck_api_token = ?, podcast_enabled = ?, flashcard_prompt = ? WHERE id = ?",
+		limit, readeckURL, readeckToken, podcastEnabled, flashcardPrompt, userID,
 	)
 	if err != nil {
 		return c.Redirect(http.StatusSeeOther, "/profile?error="+fmt.Sprintf("Failed+to+save:+%v", err))

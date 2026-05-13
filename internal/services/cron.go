@@ -85,7 +85,7 @@ func (s *CronService) generateForUser(userID string) {
 	}
 
 	totalGenerated := 0
-	maxCards := s.getUserDailyLimit(userID)
+	maxCards, customPrompt := s.getUserCardSettings(userID)
 	maxCardsPerArticle := 2
 
 	for _, article := range allArticles {
@@ -112,7 +112,7 @@ func (s *CronService) generateForUser(userID string) {
 		existing, _ := s.articles.GetCardsForArticle(article.ID)
 
 		// Generate flashcards
-		pairs, err := s.gemini.GenerateFlashcards(full.Content, existing, remaining)
+		pairs, err := s.gemini.GenerateFlashcards(full.Content, existing, remaining, customPrompt)
 		if err != nil {
 			log.Printf("[cron] Failed to generate for article %s: %v", article.ID, err)
 			continue
@@ -136,13 +136,14 @@ func (s *CronService) generateForUser(userID string) {
 	log.Printf("[cron] User %s: total %d cards generated (limit: %d)", userID, totalGenerated, maxCards)
 }
 
-func (s *CronService) getUserDailyLimit(userID string) int {
+func (s *CronService) getUserCardSettings(userID string) (int, string) {
 	var limit int
-	err := s.db.QueryRow("SELECT daily_card_limit FROM users WHERE id = ?", userID).Scan(&limit)
+	var prompt string
+	err := s.db.QueryRow("SELECT daily_card_limit, flashcard_prompt FROM users WHERE id = ?", userID).Scan(&limit, &prompt)
 	if err != nil || limit <= 0 {
-		return 5 // default
+		return 5, prompt
 	}
-	return limit
+	return limit, prompt
 }
 
 // GenerateDailyPodcasts creates podcast requests for users with podcast_enabled.

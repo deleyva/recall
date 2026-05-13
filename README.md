@@ -52,6 +52,7 @@ go build -o recall ./cmd/recall/
 | `RECALL_PORT` | `8080` | HTTP port |
 | `RECALL_DB_PATH` | `recall.db` | SQLite database file path |
 | `RECALL_SESSION_KEY` | (insecure default) | 32+ char secret for session cookies |
+| `GEMINI_API_KEY` | — | Google Gemini API key (enables AI chat + flashcard generation) |
 
 ## Usage
 
@@ -139,22 +140,23 @@ curl -b cookies http://localhost:8080/api/v1/stats
 
 | # | Feature | Status | Description |
 |---|---------|--------|-------------|
-| F1 | **AI Chat** | ✅ Done | Per-article chat with Gemini AI. Persistent history, HTML-sanitized responses, multi-turn conversation with article context |
-| F2 | **Daily Podcast via NotebookLM** | 📋 Planned | Auto-generated daily audio overview from recent/pending articles |
-| F3 | **Configurable Daily Flashcards** | ✅ Done | Per-user configurable card limit (default 5/day) |
-| F4 | **Playlist Manager** | 📋 Planned | Link Spotify/YouTube playlists to articles or decks as study material |
-| F5 | **Readeck → Recall Sync** | ✅ Done | Tag article with "recall" in Readeck → auto-imported every 15 min (configure in Profile) |
-| F6 | **Roadmap in README** | ✅ Done | This section — updated each dev session |
+| F1 | **AI Chat** | ✅ Done | Per-article Gemini chat with persistent history |
+| F2 | **Daily Podcast** | ✅ Done | Auto-generated daily audio from recent articles via NotebookLM |
+| F3 | **Configurable Flashcards** | ✅ Done | Per-user card limit (1-20/day) |
+| F4 | **Playlist Manager** | ✅ Done | Spotify/YouTube playlists linked to articles |
+| F5 | **Readeck Sync** | ✅ Done | Tag "recall" in Readeck → auto-imported every 15 min |
+| F6 | **Custom Flashcard Prompt** | ✅ Done | Editable Gemini prompt per user in Settings. Uses `{count}` placeholder |
+| F7 | **Smart Review Order** | ✅ Done | New/learning cards shown before review cards so new cards don't pile up |
+| F8 | **Dark/Light Mode** | ✅ Done | Toggle with localStorage persistence |
 
 ## Backlog
 
-- **AI essay questions** — daily Socratic questions generated from articles, with AI evaluation
-- **Reading progress tracking** — mark articles as read/in-progress
 - **Spaced repetition analytics** — retention curves, optimal study times
 - **Mobile PWA** — installable web app with offline study
 - **Deck sharing** — public deck URLs for collaboration
-- **Markdown cards** — rich formatting in card front/back
 - **Tag system** — organize decks and articles by tags
+- **Composite DB index** — `(deck_id, state, due)` for faster review queries at scale
+- **UserService abstraction** — consolidate scattered `db.QueryRow` user queries
 
 ## License
 

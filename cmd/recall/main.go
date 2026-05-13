@@ -137,14 +137,14 @@ func main() {
 	deckHandler := web.NewDeckHandler(deckService, reviewService, tmpl)
 	cardHandler := web.NewCardHandler(cardService, deckService, tmpl)
 	reviewHandler := web.NewReviewHandler(reviewService, cardService, deckService, sched, tmpl)
-	articleHandler := web.NewArticleHandler(articleService, cardService, deckService, geminiService, wikipediaService, tmpl)
+	articleHandler := web.NewArticleHandler(articleService, cardService, deckService, geminiService, wikipediaService, tmpl, db)
 	chatHandler := web.NewChatHandler(articleService, chatService, geminiService, tmpl)
 	podcastHandler := web.NewPodcastHandler(podcastService, articleService, tmpl)
 	playlistHandler := web.NewPlaylistHandler(playlistService, articleService, deckService, tmpl)
 	profileHandler := web.NewProfileHandler(tokenService, tmpl, db)
 
 	// API handler
-	apiHandler := api.NewHandler(authService, deckService, cardService, reviewService, articleService, geminiService, podcastService, playlistService, sched, authMw)
+	apiHandler := api.NewHandler(authService, deckService, cardService, reviewService, articleService, geminiService, podcastService, playlistService, sched, authMw, db)
 
 	// Start cron jobs
 	c := cron.New()

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"net/http"
 	"strconv"
 	"time"
@@ -23,9 +24,10 @@ type Handler struct {
 	playlists *services.PlaylistService
 	scheduler *scheduler.Scheduler
 	authMw    *middleware.AuthMiddleware
+	db        *sql.DB
 }
 
-func NewHandler(auth *services.AuthService, decks *services.DeckService, cards *services.CardService, reviews *services.ReviewService, articles *services.ArticleService, gemini *services.GeminiService, podcasts *services.PodcastService, playlists *services.PlaylistService, sched *scheduler.Scheduler, authMw *middleware.AuthMiddleware) *Handler {
+func NewHandler(auth *services.AuthService, decks *services.DeckService, cards *services.CardService, reviews *services.ReviewService, articles *services.ArticleService, gemini *services.GeminiService, podcasts *services.PodcastService, playlists *services.PlaylistService, sched *scheduler.Scheduler, authMw *middleware.AuthMiddleware, db *sql.DB) *Handler {
 	return &Handler{
 		auth:      auth,
 		decks:     decks,
@@ -37,6 +39,7 @@ func NewHandler(auth *services.AuthService, decks *services.DeckService, cards *
 		playlists: playlists,
 		scheduler: sched,
 		authMw:    authMw,
+		db:        db,
 	}
 }
 
@@ -439,7 +442,11 @@ func (h *Handler) GenerateArticleCards(c echo.Context) error {
 	}
 
 	existing, _ := h.articles.GetCardsForArticle(articleID)
-	pairs, err := h.gemini.GenerateFlashcards(article.Content, existing, req.Count)
+
+	var customPrompt string
+	h.db.QueryRow("SELECT flashcard_prompt FROM users WHERE id = ?", userID).Scan(&customPrompt)
+
+	pairs, err := h.gemini.GenerateFlashcards(article.Content, existing, req.Count, customPrompt)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}

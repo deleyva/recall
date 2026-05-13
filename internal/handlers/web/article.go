@@ -1,6 +1,7 @@
 package web
 
 import (
+	"database/sql"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -18,9 +19,10 @@ type ArticleHandler struct {
 	gemini    *services.GeminiService
 	wikipedia *services.WikipediaService
 	tmpl      *templates.Registry
+	db        *sql.DB
 }
 
-func NewArticleHandler(articles *services.ArticleService, cards *services.CardService, decks *services.DeckService, gemini *services.GeminiService, wikipedia *services.WikipediaService, tmpl *templates.Registry) *ArticleHandler {
+func NewArticleHandler(articles *services.ArticleService, cards *services.CardService, decks *services.DeckService, gemini *services.GeminiService, wikipedia *services.WikipediaService, tmpl *templates.Registry, db *sql.DB) *ArticleHandler {
 	return &ArticleHandler{
 		articles:  articles,
 		cards:     cards,
@@ -28,6 +30,7 @@ func NewArticleHandler(articles *services.ArticleService, cards *services.CardSe
 		gemini:    gemini,
 		wikipedia: wikipedia,
 		tmpl:      tmpl,
+		db:        db,
 	}
 }
 
@@ -111,8 +114,12 @@ func (h *ArticleHandler) GenerateFlashcards(c echo.Context) error {
 	// Get existing cards for context
 	existing, _ := h.articles.GetCardsForArticle(articleID)
 
+	// Get user's custom prompt
+	var customPrompt string
+	h.db.QueryRow("SELECT flashcard_prompt FROM users WHERE id = ?", userID).Scan(&customPrompt)
+
 	// Generate flashcards
-	pairs, err := h.gemini.GenerateFlashcards(article.Content, existing, count)
+	pairs, err := h.gemini.GenerateFlashcards(article.Content, existing, count, customPrompt)
 	if err != nil {
 		if c.Request().Header.Get("HX-Request") == "true" {
 			return c.String(http.StatusInternalServerError, fmt.Sprintf("Generation failed: %s", err.Error()))

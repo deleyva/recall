@@ -33,6 +33,13 @@
             <p class="text-xs text-gray-500 mt-1">Cards auto-generated per day (1-20)</p>
         </div>
 
+        <div>
+            <label for="flashcard_prompt" class="block text-sm font-medium text-gray-700 mb-1">Flashcard Generation Prompt</label>
+            <textarea name="flashcard_prompt" id="flashcard_prompt" rows="8"
+                class="w-full rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">{{.FlashcardPrompt}}</textarea>
+            <p class="text-xs text-gray-500 mt-1">Controls how AI generates flashcards. Use <code class="bg-gray-100 px-1 py-0.5 rounded">{count}</code> as placeholder for the number of cards.{{if .IsDefaultPrompt}} Currently using system default.{{end}}</p>
+        </div>
+
         <hr class="border-gray-200 dark:border-gray-600">
 
         <div>

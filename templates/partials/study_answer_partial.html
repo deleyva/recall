@@ -5,6 +5,25 @@
     <div class="text-xl mb-8 min-h-[80px] text-green-700 text-left">
         {{.Card.Back | safeHTML}}
     </div>
+    <!-- Edit / Delete actions -->
+    <div class="flex justify-end gap-2 mb-4">
+        <button
+            hx-get="/decks/{{.DeckID}}/study/{{.Card.ID}}/edit"
+            hx-target="#study-area"
+            hx-swap="innerHTML"
+            class="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 px-3 py-1 border border-indigo-300 dark:border-indigo-600 rounded">
+            Edit
+        </button>
+        <button
+            hx-delete="/decks/{{.DeckID}}/study/{{.Card.ID}}"
+            hx-target="#study-area"
+            hx-swap="innerHTML"
+            hx-confirm="Delete this card? This cannot be undone."
+            class="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 px-3 py-1 border border-red-300 dark:border-red-600 rounded">
+            Delete
+        </button>
+    </div>
+
     <div class="grid grid-cols-4 gap-2">
         <form hx-post="/decks/{{.DeckID}}/study" hx-target="#study-area" hx-swap="innerHTML">
             <input type="hidden" name="card_id" value="{{.Card.ID}}">

@@ -37,8 +37,8 @@
 
         <!-- Navigation -->
         <div id="nav" class="flex justify-center items-center gap-4 py-3 bg-black/80 hidden">
-            <button onclick="prevSlide()" class="bg-white dark:bg-gray-800/10 hover:bg-white dark:bg-gray-800/20 px-6 py-2 rounded-lg text-lg">&larr; Prev</button>
-            <button onclick="nextSlide()" class="bg-white dark:bg-gray-800/10 hover:bg-white dark:bg-gray-800/20 px-6 py-2 rounded-lg text-lg">Next &rarr;</button>
+            <button onclick="prevSlide()" class="bg-gray-700 hover:bg-gray-600 dark:bg-gray-600 dark:hover:bg-gray-500 text-white px-6 py-2 rounded-lg text-lg">&larr; Prev</button>
+            <button onclick="nextSlide()" class="bg-gray-700 hover:bg-gray-600 dark:bg-gray-600 dark:hover:bg-gray-500 text-white px-6 py-2 rounded-lg text-lg">Next &rarr;</button>
         </div>
 
         <!-- No images -->
@@ -51,6 +51,7 @@
         let currentSlide = 0;
         let totalSlides = 0;
         let touchStartX = 0;
+        let isMultiTouch = false;
 
         async function loadImages() {
             try {
@@ -118,9 +119,17 @@
             if (e.key === 'Escape') { window.location.href = '/to-read'; }
         });
 
-        // Touch swipe navigation
-        document.addEventListener('touchstart', (e) => { touchStartX = e.changedTouches[0].screenX; }, {passive: true});
+        // Touch swipe navigation (with pinch-to-zoom protection)
+        document.addEventListener('touchstart', (e) => {
+            if (e.touches.length > 1) { isMultiTouch = true; return; }
+            isMultiTouch = false;
+            touchStartX = e.changedTouches[0].screenX;
+        }, {passive: true});
+        document.addEventListener('touchmove', (e) => {
+            if (e.touches.length > 1) { isMultiTouch = true; }
+        }, {passive: true});
         document.addEventListener('touchend', (e) => {
+            if (isMultiTouch) { isMultiTouch = (e.touches.length > 0); return; }
             const diff = e.changedTouches[0].screenX - touchStartX;
             if (Math.abs(diff) > 50) { diff < 0 ? nextSlide() : prevSlide(); }
         }, {passive: true});

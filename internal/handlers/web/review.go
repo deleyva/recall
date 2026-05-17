@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/deleyva/recall/internal/handlers/middleware"
+	"github.com/deleyva/recall/internal/models"
 	"github.com/deleyva/recall/internal/scheduler"
 	"github.com/deleyva/recall/internal/services"
 	"github.com/deleyva/recall/internal/templates"
@@ -68,6 +69,31 @@ func (h *ReviewHandler) StudyPage(c echo.Context) error {
 	return h.tmpl.ExecuteTemplate(c.Response(), "study.html", data)
 }
 
+// renderAnswerPartial renders the answer view for a card with rating interval previews.
+func (h *ReviewHandler) renderAnswerPartial(w http.ResponseWriter, card *models.Card, deckID string) error {
+	intervals := h.scheduler.PreviewIntervals(*card, time.Now().UTC())
+	return h.tmpl.ExecuteTemplate(w, "study_answer_partial.html", map[string]interface{}{
+		"Card":      card,
+		"DeckID":    deckID,
+		"Intervals": intervals,
+	})
+}
+
+// renderNextCardOrDone fetches the next due card and renders either the card or done partial.
+func (h *ReviewHandler) renderNextCardOrDone(w http.ResponseWriter, deckID string) error {
+	nextCard, dueCount, _ := h.reviews.GetNextDue(deckID)
+	data := map[string]interface{}{
+		"Deck":     map[string]string{"ID": deckID},
+		"DueCount": dueCount,
+	}
+	if nextCard == nil {
+		data["Done"] = true
+		return h.tmpl.ExecuteTemplate(w, "study_done_partial.html", data)
+	}
+	data["Card"] = nextCard
+	return h.tmpl.ExecuteTemplate(w, "study_card_partial.html", data)
+}
+
 func (h *ReviewHandler) ShowAnswer(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 	cardID := c.Param("cardID")
@@ -78,14 +104,7 @@ func (h *ReviewHandler) ShowAnswer(c echo.Context) error {
 		return err
 	}
 
-	now := time.Now().UTC()
-	intervals := h.scheduler.PreviewIntervals(*card, now)
-
-	return h.tmpl.ExecuteTemplate(c.Response(), "study_answer_partial.html", map[string]interface{}{
-		"Card":      card,
-		"DeckID":    deckID,
-		"Intervals": intervals,
-	})
+	return h.renderAnswerPartial(c.Response(), card, deckID)
 }
 
 func (h *ReviewHandler) SubmitReview(c echo.Context) error {
@@ -120,21 +139,56 @@ func (h *ReviewHandler) SubmitReview(c echo.Context) error {
 	// Save review log
 	h.reviews.CreateLog(reviewLog.CardID, reviewLog.Rating, reviewLog.ScheduledDays, reviewLog.ElapsedDays, reviewLog.State)
 
-	// Get next card
-	nextCard, dueCount, _ := h.reviews.GetNextDue(deckID)
+	return h.renderNextCardOrDone(c.Response(), deckID)
+}
 
-	data := map[string]interface{}{
-		"Deck":     map[string]string{"ID": deckID},
-		"DueCount": dueCount,
+func (h *ReviewHandler) StudyEditCard(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	cardID := c.Param("cardID")
+	deckID := c.Param("id")
+
+	card, err := h.cards.GetForUser(cardID, userID)
+	if err != nil {
+		return err
 	}
 
-	if nextCard == nil {
-		data["Done"] = true
-		return h.tmpl.ExecuteTemplate(c.Response(), "study_done_partial.html", data)
+	return h.tmpl.ExecuteTemplate(c.Response(), "study_edit_partial.html", map[string]interface{}{
+		"Card":   card,
+		"DeckID": deckID,
+	})
+}
+
+func (h *ReviewHandler) StudyUpdateCard(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	cardID := c.Param("cardID")
+	deckID := c.Param("id")
+
+	front := c.FormValue("front")
+	back := c.FormValue("back")
+
+	if err := h.cards.UpdateForUser(cardID, userID, front, back); err != nil {
+		return err
 	}
 
-	data["Card"] = nextCard
-	return h.tmpl.ExecuteTemplate(c.Response(), "study_card_partial.html", data)
+	// Re-fetch card and show answer again
+	card, err := h.cards.GetForUser(cardID, userID)
+	if err != nil {
+		return err
+	}
+
+	return h.renderAnswerPartial(c.Response(), card, deckID)
+}
+
+func (h *ReviewHandler) StudyDeleteCard(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	cardID := c.Param("cardID")
+	deckID := c.Param("id")
+
+	if err := h.cards.DeleteForUser(cardID, userID); err != nil {
+		return err
+	}
+
+	return h.renderNextCardOrDone(c.Response(), deckID)
 }
 
 func (h *ReviewHandler) StatsPage(c echo.Context) error {

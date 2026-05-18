@@ -163,6 +163,8 @@ func main() {
 
 	// Static files
 	e.Static("/static", "static")
+	e.File("/apple-touch-icon.png", "static/icons/apple-touch-icon.png")
+	e.File("/apple-touch-icon-precomposed.png", "static/icons/apple-touch-icon.png")
 
 	// Public routes
 	e.GET("/login", authHandler.LoginPage)

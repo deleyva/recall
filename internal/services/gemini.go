@@ -144,7 +144,7 @@ func (s *GeminiService) GenerateFlashcards(content string, existing []models.Car
 	prompt.WriteString("\n\n")
 
 	if len(existing) > 0 {
-		prompt.WriteString("The following flashcards already exist for this article. Create NEW flashcards covering DIFFERENT content:\n")
+		prompt.WriteString("The following flashcards already exist for this article. CRITICAL: Do NOT create flashcards about topics already covered below, even from a different angle or with different wording. If a concept, fact, or theme appears in ANY existing card, skip it entirely and find a completely unrelated topic from the article:\n")
 		for _, c := range existing {
 			prompt.WriteString(fmt.Sprintf("- Q: %s / A: %s\n", c.Front, c.Back))
 		}

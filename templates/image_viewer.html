@@ -76,11 +76,12 @@
                     const slide = document.createElement('div');
                     slide.className = 'slide' + (i === 0 ? ' active' : '');
                     const desc = (img.description || img.title || '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+                    const thumbUrl = img.thumb_url || img.url;
+                    const fallbackUrl = img.url;
                     slide.innerHTML = `
                         <div class="slide-img-wrap">
-                            <img src="${img.thumb_url || img.url}" alt="${desc}"
-                                referrerpolicy="no-referrer"
-                                onerror="this.src='${img.url}'">
+                            <img data-src="${thumbUrl}" data-fallback="${fallbackUrl}" alt="${desc}"
+                                referrerpolicy="no-referrer">
                         </div>
                         <div class="px-4 py-2 text-center">
                             <p class="text-gray-300 text-sm">${img.description || img.title || ''}</p>
@@ -92,10 +93,27 @@
                 document.getElementById('loading').classList.add('hidden');
                 slidesEl.classList.remove('hidden');
                 document.getElementById('nav').classList.remove('hidden');
+                lazyLoadSlide(0);
+                lazyLoadSlide(1);
                 updateCounter();
             } catch (err) {
                 document.getElementById('loading').innerHTML = '<p class="text-red-400">Failed to load images: ' + err.message + '</p>';
             }
+        }
+
+        function lazyLoadSlide(index) {
+            if (index < 0 || index >= totalSlides) return;
+            const slide = document.querySelectorAll('.slide')[index];
+            if (!slide) return;
+            const img = slide.querySelector('img[data-src]');
+            if (!img) return;
+            const src = img.getAttribute('data-src');
+            const fallback = img.getAttribute('data-fallback');
+            img.src = src;
+            if (fallback && fallback !== src) {
+                img.onerror = function() { this.onerror = null; this.src = fallback; };
+            }
+            img.removeAttribute('data-src');
         }
 
         function showSlide(n) {
@@ -103,6 +121,9 @@
             slides.forEach(s => s.classList.remove('active'));
             currentSlide = ((n % totalSlides) + totalSlides) % totalSlides;
             slides[currentSlide].classList.add('active');
+            lazyLoadSlide(currentSlide);
+            lazyLoadSlide(currentSlide + 1);
+            lazyLoadSlide(currentSlide - 1);
             updateCounter();
         }
 

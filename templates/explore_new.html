@@ -1,0 +1,169 @@
+{{define "content"}}
+<div class="max-w-xl mx-auto">
+    <div class="flex items-center mb-6">
+        <a href="/explore" class="text-indigo-600 dark:text-indigo-400 hover:underline mr-3">&larr; Goals</a>
+        <h1 class="text-2xl font-bold">New Learning Goal</h1>
+    </div>
+
+    {{if .Error}}
+    <div class="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 p-3 rounded-lg mb-4">{{.Error}}</div>
+    {{end}}
+
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow p-6">
+        <!-- Wikipedia search -->
+        <div class="mb-6">
+            <label class="block text-sm font-medium mb-2">Search Wikipedia</label>
+            <div class="flex gap-2 mb-2">
+                <select id="wiki-lang" class="bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm">
+                    <option value="en">EN</option>
+                    <option value="es">ES</option>
+                    <option value="fr">FR</option>
+                    <option value="de">DE</option>
+                    <option value="it">IT</option>
+                    <option value="pt">PT</option>
+                </select>
+                <input type="text" id="wiki-search" placeholder="e.g. Siglo XVII, Baroque music..."
+                    class="flex-1 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2">
+            </div>
+            <div id="search-results" class="hidden border border-gray-200 dark:border-gray-700 rounded-lg max-h-60 overflow-y-auto"></div>
+        </div>
+
+        <!-- Selected article preview -->
+        <div id="article-preview" class="hidden mb-6 bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+            <div class="flex gap-4">
+                <img id="preview-thumb" src="" alt="" class="w-20 h-20 object-cover rounded hidden">
+                <div class="flex-1">
+                    <h3 id="preview-title" class="font-semibold text-lg"></h3>
+                    <p id="preview-summary" class="text-sm text-gray-600 dark:text-gray-300 mt-1"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Goal form -->
+        <form method="POST" action="/explore" id="goal-form" class="hidden">
+            <input type="hidden" name="seed_url" id="seed-url">
+
+            <div class="mb-4">
+                <label for="title" class="block text-sm font-medium mb-1">Goal Title</label>
+                <input type="text" name="title" id="goal-title"
+                    class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2"
+                    placeholder="e.g. Learn about the 17th century">
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 mb-6">
+                <div>
+                    <label for="time_horizon" class="block text-sm font-medium mb-1">Time Horizon</label>
+                    <select name="time_horizon" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2">
+                        <option value="7">1 week</option>
+                        <option value="14" selected>2 weeks</option>
+                        <option value="21">3 weeks</option>
+                        <option value="28">4 weeks</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="daily_pace" class="block text-sm font-medium mb-1">Articles/day</label>
+                    <select name="daily_pace" class="w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2">
+                        <option value="1">1 article</option>
+                        <option value="2">2 articles</option>
+                        <option value="3" selected>3 articles</option>
+                        <option value="4">4 articles</option>
+                        <option value="5">5 articles</option>
+                    </select>
+                </div>
+            </div>
+
+            <button type="submit" class="w-full bg-indigo-600 text-white px-4 py-3 rounded-lg hover:bg-indigo-700 font-medium">
+                Create Learning Goal
+            </button>
+        </form>
+    </div>
+</div>
+
+<script>
+(function() {
+    const searchInput = document.getElementById('wiki-search');
+    const langSelect = document.getElementById('wiki-lang');
+    const resultsDiv = document.getElementById('search-results');
+    const previewDiv = document.getElementById('article-preview');
+    const goalForm = document.getElementById('goal-form');
+    let debounceTimer;
+
+    searchInput.addEventListener('input', function() {
+        clearTimeout(debounceTimer);
+        const q = this.value.trim();
+        if (q.length < 2) {
+            resultsDiv.classList.add('hidden');
+            return;
+        }
+        debounceTimer = setTimeout(() => {
+            const lang = langSelect.value;
+            fetch('/explore/wiki-search?q=' + encodeURIComponent(q) + '&lang=' + lang)
+                .then(r => r.json())
+                .then(items => {
+                    if (!items || items.length === 0) {
+                        resultsDiv.classList.add('hidden');
+                        return;
+                    }
+                    resultsDiv.innerHTML = items.map(item =>
+                        '<div class="p-3 hover:bg-gray-100 dark:hover:bg-gray-600 cursor-pointer border-b border-gray-100 dark:border-gray-700 last:border-0" ' +
+                        'data-url="' + escapeAttr(item.url) + '" data-title="' + escapeAttr(item.title) + '" data-summary="' + escapeAttr(item.summary) + '">' +
+                        '<div class="font-medium text-sm">' + escapeHtml(item.title) + '</div>' +
+                        '<div class="text-xs text-gray-500 dark:text-gray-400 mt-1">' + escapeHtml(item.summary) + '</div>' +
+                        '</div>'
+                    ).join('');
+                    resultsDiv.classList.remove('hidden');
+
+                    resultsDiv.querySelectorAll('[data-url]').forEach(el => {
+                        el.addEventListener('click', function() {
+                            selectArticle(this.dataset.url, this.dataset.title, this.dataset.summary);
+                        });
+                    });
+                });
+        }, 300);
+    });
+
+    // Also allow pasting a Wikipedia URL directly
+    searchInput.addEventListener('paste', function(e) {
+        setTimeout(() => {
+            const val = this.value.trim();
+            if (val.includes('wikipedia.org/wiki/')) {
+                const title = decodeURIComponent(val.split('/wiki/')[1] || '').replace(/_/g, ' ');
+                selectArticle(val, title, '');
+            }
+        }, 100);
+    });
+
+    function selectArticle(url, title, summary) {
+        document.getElementById('seed-url').value = url;
+        document.getElementById('goal-title').value = title;
+        document.getElementById('preview-title').textContent = title;
+        document.getElementById('preview-summary').textContent = summary || 'Loading article details...';
+        previewDiv.classList.remove('hidden');
+        goalForm.classList.remove('hidden');
+        resultsDiv.classList.add('hidden');
+        searchInput.value = title;
+
+        // Fetch full summary with thumbnail
+        fetch('/explore/wiki-search?q=' + encodeURIComponent(title) + '&lang=' + langSelect.value)
+            .then(r => r.json())
+            .then(items => {
+                const match = items && items.find(i => i.title === title);
+                if (match && match.summary) {
+                    document.getElementById('preview-summary').textContent = match.summary;
+                }
+            });
+    }
+
+    function escapeHtml(s) {
+        const d = document.createElement('div');
+        d.textContent = s || '';
+        return d.innerHTML;
+    }
+    function escapeAttr(s) {
+        return (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+})();
+</script>
+{{end}}
+
+{{template "base" .}}

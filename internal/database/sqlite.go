@@ -27,6 +27,6 @@ func Open(path string) (*sql.DB, error) {
 		}
 	}
 
-	db.SetMaxOpenConns(1) // SQLite handles one writer at a time
+	db.SetMaxOpenConns(2) // Allow concurrent reads in WAL mode
 	return db, nil
 }

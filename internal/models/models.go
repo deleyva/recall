@@ -163,3 +163,45 @@ type PlaylistDeck struct {
 	PlaylistID string `json:"playlist_id"`
 	DeckID     string `json:"deck_id"`
 }
+
+type LearningGoal struct {
+	ID          string    `json:"id"`
+	UserID      string    `json:"user_id"`
+	Title       string    `json:"title"`
+	SeedURL     string    `json:"seed_url"`
+	SeedTitle   string    `json:"seed_title"`
+	SeedLang    string    `json:"seed_lang"`
+	TimeHorizon int       `json:"time_horizon"`
+	DailyPace   int       `json:"daily_pace"`
+	Status      string    `json:"status"`
+	ThumbURL    string    `json:"thumb_url"`
+	CreatedAt   time.Time `json:"created_at"`
+	// Computed
+	TotalNodes  int `json:"total_nodes,omitempty"`
+	QueuedNodes int `json:"queued_nodes,omitempty"`
+	AddedNodes  int `json:"added_nodes,omitempty"`
+	DayNumber   int `json:"day_number,omitempty"`
+}
+
+type GraphNode struct {
+	ID             string    `json:"id"`
+	GoalID         string    `json:"goal_id"`
+	WikiTitle      string    `json:"wiki_title"`
+	WikiURL        string    `json:"wiki_url"`
+	Summary        string    `json:"summary"`
+	ThumbURL       string    `json:"thumb_url"`
+	Depth          int       `json:"depth"`
+	Status         string    `json:"status"`
+	ArticleID      *string   `json:"article_id,omitempty"`
+	ScheduledDay   *int      `json:"scheduled_day,omitempty"`
+	SortOrder      int       `json:"sort_order"`
+	RelevanceScore float64   `json:"relevance_score"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+type GraphEdge struct {
+	ID           string `json:"id"`
+	GoalID       string `json:"goal_id"`
+	SourceNodeID string `json:"source_node_id"`
+	TargetNodeID string `json:"target_node_id"`
+}

@@ -24,6 +24,26 @@ func NewRegistry() *Registry {
 			"mod":      func(a, b int) int { return a % b },
 			"ceil":     func(a, b float64) int { return int(math.Ceil(a / b)) },
 			"safeHTML": func(s string) template.HTML { return template.HTML(s) },
+			"mul": func(a, b interface{}) float64 {
+				af := toFloat(a)
+				bf := toFloat(b)
+				return af * bf
+			},
+			"div": func(a, b interface{}) float64 {
+				af := toFloat(a)
+				bf := toFloat(b)
+				if bf == 0 {
+					return 0
+				}
+				return af / bf
+			},
+			"seq": func(start, end int) []int {
+				var s []int
+				for i := start; i <= end; i++ {
+					s = append(s, i)
+				}
+				return s
+			},
 			"dict": func(values ...interface{}) map[string]interface{} {
 				m := make(map[string]interface{})
 				for i := 0; i+1 < len(values); i += 2 {
@@ -80,6 +100,21 @@ func (r *Registry) Load(templatesDir string) error {
 	}
 
 	return nil
+}
+
+func toFloat(v interface{}) float64 {
+	switch n := v.(type) {
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
+	case float64:
+		return n
+	case float32:
+		return float64(n)
+	default:
+		return 0
+	}
 }
 
 func (r *Registry) ExecuteTemplate(w io.Writer, name string, data interface{}) error {

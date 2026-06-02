@@ -1,0 +1,55 @@
+{{define "content"}}
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-2xl font-bold">Knowledge Explorer</h1>
+    <a href="/explore/new" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 text-sm">+ New Learning Goal</a>
+</div>
+
+{{if .Error}}
+<div class="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 p-3 rounded-lg mb-4">{{.Error}}</div>
+{{end}}
+{{if .Success}}
+<div class="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 p-3 rounded-lg mb-4">{{.Success}}</div>
+{{end}}
+
+{{if .Goals}}
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    {{range .Goals}}
+    <a href="/explore/{{.ID}}" class="block bg-white dark:bg-gray-800 rounded-xl shadow hover:shadow-md transition-shadow overflow-hidden">
+        {{if .ThumbURL}}
+        <div class="h-32 bg-gray-200 dark:bg-gray-700 overflow-hidden">
+            <img src="{{.ThumbURL}}" alt="{{.Title}}" class="w-full h-full object-cover">
+        </div>
+        {{else}}
+        <div class="h-32 bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center">
+            <span class="text-white text-4xl">W</span>
+        </div>
+        {{end}}
+        <div class="p-4">
+            <h2 class="font-semibold text-lg mb-2 truncate">{{.Title}}</h2>
+            <div class="text-sm text-gray-500 dark:text-gray-400 mb-2">Day {{.DayNumber}} of {{.TimeHorizon}}</div>
+            <!-- Progress bar -->
+            <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-2">
+                {{if .TotalNodes}}
+                <div class="h-2 rounded-full bg-gradient-to-r from-indigo-500 to-green-500"
+                     style="width: {{printf "%.0f" (div (mul (plus .QueuedNodes .AddedNodes) 100) .TotalNodes)}}%"></div>
+                {{end}}
+            </div>
+            <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+                <span>{{.AddedNodes}} added</span>
+                <span>{{.QueuedNodes}} queued</span>
+                <span>{{.TotalNodes}} total</span>
+            </div>
+        </div>
+    </a>
+    {{end}}
+</div>
+{{else}}
+<div class="text-center py-16 text-gray-500 dark:text-gray-400">
+    <p class="text-lg mb-4">No learning goals yet</p>
+    <p class="text-sm mb-6">Start from a Wikipedia article and build a learning path</p>
+    <a href="/explore/new" class="bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700">Create your first goal</a>
+</div>
+{{end}}
+{{end}}
+
+{{template "base" .}}

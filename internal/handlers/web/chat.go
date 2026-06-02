@@ -14,11 +14,11 @@ import (
 type ChatHandler struct {
 	articles *services.ArticleService
 	chat     *services.ChatService
-	gemini   *services.GeminiService
+	gemini   *services.LLMService
 	tmpl     *templates.Registry
 }
 
-func NewChatHandler(articles *services.ArticleService, chat *services.ChatService, gemini *services.GeminiService, tmpl *templates.Registry) *ChatHandler {
+func NewChatHandler(articles *services.ArticleService, chat *services.ChatService, gemini *services.LLMService, tmpl *templates.Registry) *ChatHandler {
 	return &ChatHandler{
 		articles: articles,
 		chat:     chat,

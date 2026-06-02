@@ -12,11 +12,11 @@ type CronService struct {
 	db       *sql.DB
 	articles *ArticleService
 	cards    *CardService
-	gemini   *GeminiService
+	gemini   *LLMService
 	podcasts *PodcastService
 }
 
-func NewCronService(db *sql.DB, articles *ArticleService, cards *CardService, gemini *GeminiService, podcasts *PodcastService) *CronService {
+func NewCronService(db *sql.DB, articles *ArticleService, cards *CardService, gemini *LLMService, podcasts *PodcastService) *CronService {
 	return &CronService{
 		db:       db,
 		articles: articles,

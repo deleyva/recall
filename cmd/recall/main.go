@@ -104,12 +104,13 @@ func main() {
 	cardService := services.NewCardService(db)
 	reviewService := services.NewReviewService(db)
 	articleService := services.NewArticleService(db)
-	geminiService := services.NewGeminiService(cfg.GeminiAPIKey)
+	geminiService := services.NewLLMService(cfg.LLMAPIKey)
 	tokenService := services.NewTokenService(db)
 	wikipediaService := services.NewWikipediaService()
 	chatService := services.NewChatService(db)
 	podcastService := services.NewPodcastService(db)
 	playlistService := services.NewPlaylistService(db)
+	explorerService := services.NewExplorerService(db, wikipediaService)
 	cronService := services.NewCronService(db, articleService, cardService, geminiService, podcastService)
 	readeckService := services.NewReadeckService(db, articleService)
 	sched := scheduler.New()
@@ -141,19 +142,24 @@ func main() {
 	chatHandler := web.NewChatHandler(articleService, chatService, geminiService, tmpl)
 	podcastHandler := web.NewPodcastHandler(podcastService, articleService, tmpl)
 	playlistHandler := web.NewPlaylistHandler(playlistService, articleService, deckService, tmpl)
+	explorerHandler := web.NewExplorerHandler(explorerService, articleService, wikipediaService, tmpl)
 	profileHandler := web.NewProfileHandler(tokenService, tmpl, db)
 
 	// API handler
 	apiHandler := api.NewHandler(authService, deckService, cardService, reviewService, articleService, geminiService, podcastService, playlistService, sched, authMw, db)
 
-	// Start cron jobs
+	// Start cron jobs (disabled in dev mode)
 	c := cron.New()
-	c.AddFunc("0 1 * * *", cronService.GenerateDailyCards)       // 1:00 AM daily
-	c.AddFunc("0 2 * * *", cronService.GenerateDailyPodcasts)  // 2:00 AM daily
-	c.AddFunc("*/15 * * * *", readeckService.SyncAllUsers)       // every 15 min
-	c.Start()
-	defer c.Stop()
-	log.Println("Cron scheduler started (cards at 1:00 AM, podcasts at 2:00 AM, Readeck sync every 15 min)")
+	if !cfg.DevMode {
+		c.AddFunc("0 1 * * *", cronService.GenerateDailyCards)
+		c.AddFunc("0 2 * * *", cronService.GenerateDailyPodcasts)
+		c.AddFunc("*/15 * * * *", readeckService.SyncAllUsers)
+		c.Start()
+		defer c.Stop()
+		log.Println("Cron scheduler started (cards at 1:00 AM, podcasts at 2:00 AM, Readeck sync every 15 min)")
+	} else {
+		log.Println("Dev mode: cron jobs disabled")
+	}
 
 	// Echo server
 	e := echo.New()
@@ -217,6 +223,19 @@ func main() {
 	auth.POST("/playlists/:id/unlink-article/:articleID", playlistHandler.UnlinkArticle)
 	auth.POST("/playlists/:id/link-deck", playlistHandler.LinkDeck)
 	auth.POST("/playlists/:id/unlink-deck/:deckID", playlistHandler.UnlinkDeck)
+	auth.GET("/explore", explorerHandler.ListGoals)
+	auth.GET("/explore/new", explorerHandler.NewGoalPage)
+	auth.POST("/explore", explorerHandler.CreateGoal)
+	auth.GET("/explore/wiki-search", explorerHandler.WikiSearch)
+	auth.GET("/explore/:id/graph", explorerHandler.GraphJSON)
+	auth.GET("/explore/:id/nodes/:nodeID", explorerHandler.NodePanel)
+	auth.POST("/explore/:id/nodes/:nodeID/queue", explorerHandler.QueueNode)
+	auth.POST("/explore/:id/nodes/:nodeID/unqueue", explorerHandler.UnqueueNode)
+	auth.POST("/explore/:id/nodes/:nodeID/add", explorerHandler.AddToReadList)
+	auth.POST("/explore/:id/expand/:nodeID", explorerHandler.ExpandNode)
+	auth.POST("/explore/:id/auto-schedule", explorerHandler.AutoSchedule)
+	auth.POST("/explore/:id/delete", explorerHandler.DeleteGoal)
+	auth.GET("/explore/:id", explorerHandler.GoalDetail)
 	auth.GET("/podcasts", podcastHandler.ListPage)
 	auth.POST("/podcasts", podcastHandler.CreatePodcast)
 	auth.POST("/podcasts/:id/delete", podcastHandler.DeletePodcast)

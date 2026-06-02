@@ -16,13 +16,13 @@ type ArticleHandler struct {
 	articles  *services.ArticleService
 	cards     *services.CardService
 	decks     *services.DeckService
-	gemini    *services.GeminiService
+	gemini    *services.LLMService
 	wikipedia *services.WikipediaService
 	tmpl      *templates.Registry
 	db        *sql.DB
 }
 
-func NewArticleHandler(articles *services.ArticleService, cards *services.CardService, decks *services.DeckService, gemini *services.GeminiService, wikipedia *services.WikipediaService, tmpl *templates.Registry, db *sql.DB) *ArticleHandler {
+func NewArticleHandler(articles *services.ArticleService, cards *services.CardService, decks *services.DeckService, gemini *services.LLMService, wikipedia *services.WikipediaService, tmpl *templates.Registry, db *sql.DB) *ArticleHandler {
 	return &ArticleHandler{
 		articles:  articles,
 		cards:     cards,

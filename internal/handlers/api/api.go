@@ -19,7 +19,7 @@ type Handler struct {
 	cards     *services.CardService
 	reviews   *services.ReviewService
 	articles  *services.ArticleService
-	gemini    *services.GeminiService
+	gemini    *services.LLMService
 	podcasts  *services.PodcastService
 	playlists *services.PlaylistService
 	scheduler *scheduler.Scheduler
@@ -27,7 +27,7 @@ type Handler struct {
 	db        *sql.DB
 }
 
-func NewHandler(auth *services.AuthService, decks *services.DeckService, cards *services.CardService, reviews *services.ReviewService, articles *services.ArticleService, gemini *services.GeminiService, podcasts *services.PodcastService, playlists *services.PlaylistService, sched *scheduler.Scheduler, authMw *middleware.AuthMiddleware, db *sql.DB) *Handler {
+func NewHandler(auth *services.AuthService, decks *services.DeckService, cards *services.CardService, reviews *services.ReviewService, articles *services.ArticleService, gemini *services.LLMService, podcasts *services.PodcastService, playlists *services.PlaylistService, sched *scheduler.Scheduler, authMw *middleware.AuthMiddleware, db *sql.DB) *Handler {
 	return &Handler{
 		auth:      auth,
 		decks:     decks,

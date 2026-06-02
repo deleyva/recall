@@ -14,66 +14,67 @@ import (
 	"github.com/deleyva/recall/internal/models"
 )
 
-const geminiAPIURL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+const groqAPIURL = "https://api.groq.com/openai/v1/chat/completions"
+const groqModel = "llama-3.3-70b-versatile"
 
-type GeminiService struct {
+type LLMService struct {
 	apiKey     string
 	httpClient *http.Client
 }
 
-func NewGeminiService(apiKey string) *GeminiService {
-	return &GeminiService{
+func NewLLMService(apiKey string) *LLMService {
+	return &LLMService{
 		apiKey:     apiKey,
-		httpClient: &http.Client{Timeout: 60 * time.Second},
+		httpClient: &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
-func (s *GeminiService) IsConfigured() bool {
+func (s *LLMService) IsConfigured() bool {
 	return s.apiKey != ""
 }
 
-type geminiRequest struct {
-	Contents []geminiContent `json:"contents"`
+// OpenAI-compatible request/response types
+type chatRequest struct {
+	Model       string        `json:"model"`
+	Messages    []chatMessage `json:"messages"`
+	Temperature float64       `json:"temperature"`
 }
 
-type geminiContent struct {
-	Role  string       `json:"role,omitempty"`
-	Parts []geminiPart `json:"parts"`
+type chatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
 }
 
-type geminiPart struct {
-	Text string `json:"text"`
+type chatResponse struct {
+	Choices []struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	} `json:"choices"`
 }
 
-type geminiResponse struct {
-	Candidates []struct {
-		Content struct {
-			Parts []struct {
-				Text string `json:"text"`
-			} `json:"parts"`
-		} `json:"content"`
-	} `json:"candidates"`
-}
-
-// callGemini sends the assembled contents to the Gemini API and returns the raw text response.
-func (s *GeminiService) callGemini(contents []geminiContent) (string, error) {
-	reqBody := geminiRequest{Contents: contents}
+func (s *LLMService) callLLM(messages []chatMessage) (string, error) {
+	reqBody := chatRequest{
+		Model:       groqModel,
+		Messages:    messages,
+		Temperature: 0.7,
+	}
 
 	bodyBytes, err := json.Marshal(reqBody)
 	if err != nil {
 		return "", fmt.Errorf("marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s?key=%s", geminiAPIURL, s.apiKey)
-	req, err := http.NewRequest("POST", url, bytes.NewReader(bodyBytes))
+	req, err := http.NewRequest("POST", groqAPIURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+s.apiKey)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("gemini request: %w", err)
+		return "", fmt.Errorf("LLM request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -83,19 +84,19 @@ func (s *GeminiService) callGemini(contents []geminiContent) (string, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("gemini API error (status %d): %s", resp.StatusCode, string(respBytes))
+		return "", fmt.Errorf("LLM API error (status %d): %s", resp.StatusCode, string(respBytes))
 	}
 
-	var gemResp geminiResponse
-	if err := json.Unmarshal(respBytes, &gemResp); err != nil {
+	var chatResp chatResponse
+	if err := json.Unmarshal(respBytes, &chatResp); err != nil {
 		return "", fmt.Errorf("parse response: %w", err)
 	}
 
-	if len(gemResp.Candidates) == 0 || len(gemResp.Candidates[0].Content.Parts) == 0 {
-		return "", fmt.Errorf("empty response from Gemini")
+	if len(chatResp.Choices) == 0 {
+		return "", fmt.Errorf("empty response from LLM")
 	}
 
-	return gemResp.Candidates[0].Content.Parts[0].Text, nil
+	return chatResp.Choices[0].Message.Content, nil
 }
 
 // truncateUTF8 truncates a string to at most maxBytes bytes at a rune boundary.
@@ -129,7 +130,7 @@ FORMATTING RULES:
 - Keep the "front" field as a clear, concise question (plain text, no HTML).
 - CRITICAL: Write both front and back in the SAME LANGUAGE as the article content. If the article is in Spanish, the flashcards must be in Spanish. If in English, in English. Match the article's language exactly.`
 
-func (s *GeminiService) GenerateFlashcards(content string, existing []models.Card, count int, customPrompt string) ([]FlashcardPair, error) {
+func (s *LLMService) GenerateFlashcards(content string, existing []models.Card, count int, customPrompt string) ([]FlashcardPair, error) {
 	content = truncateUTF8(content, 30000)
 
 	// Use custom prompt if provided, otherwise default
@@ -155,62 +156,55 @@ func (s *GeminiService) GenerateFlashcards(content string, existing []models.Car
 	prompt.WriteString(content)
 	prompt.WriteString("\n\nRespond ONLY with a JSON array of objects with \"front\" and \"back\" keys. No markdown, no explanation. Example: [{\"front\":\"What is X?\",\"back\":\"<strong>X</strong> is a concept that includes:<ul><li>First aspect</li><li>Second aspect</li></ul>\"}]")
 
-	contents := []geminiContent{
-		{Role: "user", Parts: []geminiPart{{Text: prompt.String()}}},
+	messages := []chatMessage{
+		{Role: "user", Content: prompt.String()},
 	}
 
-	text, err := s.callGemini(contents)
+	text, err := s.callLLM(messages)
 	if err != nil {
 		return nil, err
 	}
 	return parseFlashcardJSON(text)
 }
 
-func (s *GeminiService) ChatWithArticle(articleContent string, history []models.ChatMessage, userQuestion string) (string, error) {
+func (s *LLMService) ChatWithArticle(articleContent string, history []models.ChatMessage, userQuestion string) (string, error) {
 	articleContent = truncateUTF8(articleContent, 20000)
 
-	// Build multi-turn conversation with proper roles
-	var contents []geminiContent
+	var messages []chatMessage
 
-	// System-like first turn: set context with article
+	// System message with article context
 	systemPrompt := fmt.Sprintf(`You are a helpful study assistant. The user is studying an article and will ask questions about it. Answer based on the article content. Always respond in the same language as the article.
 
 Article content:
 %s`, articleContent)
 
-	contents = append(contents, geminiContent{
-		Role:  "user",
-		Parts: []geminiPart{{Text: systemPrompt}},
+	messages = append(messages, chatMessage{
+		Role:    "system",
+		Content: systemPrompt,
 	})
 
-	// Model acknowledgment to complete the user-model pair
-	contents = append(contents, geminiContent{
-		Role:  "model",
-		Parts: []geminiPart{{Text: "I've read the article. Ask me anything about it."}},
-	})
-
-	// Add chat history (last 20 messages max) with correct roles
+	// Add chat history (last 20 messages max)
 	if len(history) > 20 {
 		history = history[len(history)-20:]
 	}
 	for _, msg := range history {
 		role := "user"
 		if msg.Role == models.RoleAssistant {
-			role = "model" // Gemini API uses "model", not "assistant"
+			role = "assistant"
 		}
-		contents = append(contents, geminiContent{
-			Role:  role,
-			Parts: []geminiPart{{Text: msg.Content}},
+		messages = append(messages, chatMessage{
+			Role:    role,
+			Content: msg.Content,
 		})
 	}
 
 	// Add current user question
-	contents = append(contents, geminiContent{
-		Role:  "user",
-		Parts: []geminiPart{{Text: userQuestion}},
+	messages = append(messages, chatMessage{
+		Role:    "user",
+		Content: userQuestion,
 	})
 
-	text, err := s.callGemini(contents)
+	text, err := s.callLLM(messages)
 	if err != nil {
 		return "", err
 	}

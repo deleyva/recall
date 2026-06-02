@@ -8,15 +8,17 @@ type Config struct {
 	Port         string
 	DatabasePath string
 	SessionKey   string
-	GeminiAPIKey string
+	LLMAPIKey string
+	DevMode      bool
 }
 
 func Load() *Config {
 	return &Config{
-		Port:         getEnv("RECALL_PORT", "8080"),
+		Port:         getEnv("RECALL_PORT", "8084"),
 		DatabasePath: getEnv("RECALL_DB_PATH", "recall.db"),
 		SessionKey:   getEnv("RECALL_SESSION_KEY", "change-me-in-production-32chars!!"),
-		GeminiAPIKey: getEnv("GEMINI_API_KEY", ""),
+		LLMAPIKey: getEnv("LLM_API_KEY", ""),
+		DevMode:      getEnv("RECALL_ENV", "dev") == "dev",
 	}
 }
 

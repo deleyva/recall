@@ -19,7 +19,7 @@ type Handler struct {
 	cards     *services.CardService
 	reviews   *services.ReviewService
 	articles  *services.ArticleService
-	gemini    *services.LLMService
+	llm       *services.LLMService
 	podcasts  *services.PodcastService
 	playlists *services.PlaylistService
 	scheduler *scheduler.Scheduler
@@ -27,14 +27,14 @@ type Handler struct {
 	db        *sql.DB
 }
 
-func NewHandler(auth *services.AuthService, decks *services.DeckService, cards *services.CardService, reviews *services.ReviewService, articles *services.ArticleService, gemini *services.LLMService, podcasts *services.PodcastService, playlists *services.PlaylistService, sched *scheduler.Scheduler, authMw *middleware.AuthMiddleware, db *sql.DB) *Handler {
+func NewHandler(auth *services.AuthService, decks *services.DeckService, cards *services.CardService, reviews *services.ReviewService, articles *services.ArticleService, llm *services.LLMService, podcasts *services.PodcastService, playlists *services.PlaylistService, sched *scheduler.Scheduler, authMw *middleware.AuthMiddleware, db *sql.DB) *Handler {
 	return &Handler{
 		auth:      auth,
 		decks:     decks,
 		cards:     cards,
 		reviews:   reviews,
 		articles:  articles,
-		gemini:    gemini,
+		llm:       llm,
 		podcasts:  podcasts,
 		playlists: playlists,
 		scheduler: sched,
@@ -422,8 +422,8 @@ func (h *Handler) GenerateArticleCards(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 	articleID := c.Param("id")
 
-	if !h.gemini.IsConfigured() {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "Gemini not configured"})
+	if !h.llm.IsConfigured() {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "LLM not configured"})
 	}
 
 	var req struct {
@@ -446,7 +446,7 @@ func (h *Handler) GenerateArticleCards(c echo.Context) error {
 	var customPrompt string
 	h.db.QueryRow("SELECT flashcard_prompt FROM users WHERE id = ?", userID).Scan(&customPrompt)
 
-	pairs, err := h.gemini.GenerateFlashcards(article.Content, existing, req.Count, customPrompt)
+	pairs, err := h.llm.GenerateFlashcards(article.Content, existing, req.Count, customPrompt)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}

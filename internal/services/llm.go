@@ -128,7 +128,8 @@ FORMATTING RULES:
 - When listing items in a specific sequence or ranking, use <ol><li>...</li></ol>.
 - Never use raw numbered text like "1. item". Always use proper HTML list tags.
 - Keep the "front" field as a clear, concise question (plain text, no HTML).
-- CRITICAL: Write both front and back in the SAME LANGUAGE as the article content. If the article is in Spanish, the flashcards must be in Spanish. If in English, in English. Match the article's language exactly.`
+- CRITICAL: Write both front and back in the SAME LANGUAGE as the article content. If the article is in Spanish, the flashcards must be in Spanish. If in English, in English. Match the article's language exactly.
+- LANGUAGE DETECTION: Before generating any flashcard, detect the language of the article. Then write ALL flashcards entirely in that detected language. NEVER default to English if the article is not in English. Every word of every flashcard — questions and answers — must be in the article's language.`
 
 func (s *LLMService) GenerateFlashcards(content string, existing []models.Card, count int, customPrompt string) ([]FlashcardPair, error) {
 	content = truncateUTF8(content, 30000)
@@ -157,6 +158,7 @@ func (s *LLMService) GenerateFlashcards(content string, existing []models.Card, 
 	prompt.WriteString("\n\nRespond ONLY with a JSON array of objects with \"front\" and \"back\" keys. No markdown, no explanation. Example: [{\"front\":\"What is X?\",\"back\":\"<strong>X</strong> is a concept that includes:<ul><li>First aspect</li><li>Second aspect</li></ul>\"}]")
 
 	messages := []chatMessage{
+		{Role: "system", Content: "You are a multilingual flashcard generator. CRITICAL: Detect the language of the article content provided and generate ALL output exclusively in that language. If the article is in Spanish, every flashcard must be in Spanish. If in French, in French. NEVER default to English unless the article itself is in English. Respond ONLY with a JSON array."},
 		{Role: "user", Content: prompt.String()},
 	}
 

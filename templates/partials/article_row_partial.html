@@ -21,7 +21,7 @@
     </td>
     <td class="px-4 py-3">
         <div class="flex items-center justify-end gap-2">
-            {{if .GeminiEnabled}}
+            {{if .LLMEnabled}}
             <form hx-post="/to-read/{{.Article.ID}}/generate" hx-target="#article-{{.Article.ID}}" hx-swap="outerHTML"
                 class="flex items-center gap-1">
                 <select name="count" class="text-xs border rounded px-1 py-1 w-14">

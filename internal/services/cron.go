@@ -12,16 +12,16 @@ type CronService struct {
 	db       *sql.DB
 	articles *ArticleService
 	cards    *CardService
-	gemini   *LLMService
+	llm      *LLMService
 	podcasts *PodcastService
 }
 
-func NewCronService(db *sql.DB, articles *ArticleService, cards *CardService, gemini *LLMService, podcasts *PodcastService) *CronService {
+func NewCronService(db *sql.DB, articles *ArticleService, cards *CardService, llm *LLMService, podcasts *PodcastService) *CronService {
 	return &CronService{
 		db:       db,
 		articles: articles,
 		cards:    cards,
-		gemini:   gemini,
+		llm:      llm,
 		podcasts: podcasts,
 	}
 }
@@ -30,8 +30,8 @@ func NewCronService(db *sql.DB, articles *ArticleService, cards *CardService, ge
 // Prioritizes articles with 0 flashcards, then longer articles.
 // Caps at 2 cards per article per run to spread across articles.
 func (s *CronService) GenerateDailyCards() {
-	if !s.gemini.IsConfigured() {
-		log.Println("[cron] Gemini not configured, skipping daily card generation")
+	if !s.llm.IsConfigured() {
+		log.Println("[cron] LLM not configured, skipping daily card generation")
 		return
 	}
 
@@ -112,7 +112,7 @@ func (s *CronService) generateForUser(userID string) {
 		existing, _ := s.articles.GetCardsForArticle(article.ID)
 
 		// Generate flashcards
-		pairs, err := s.gemini.GenerateFlashcards(full.Content, existing, remaining, customPrompt)
+		pairs, err := s.llm.GenerateFlashcards(full.Content, existing, remaining, customPrompt)
 		if err != nil {
 			log.Printf("[cron] Failed to generate for article %s: %v", article.ID, err)
 			continue

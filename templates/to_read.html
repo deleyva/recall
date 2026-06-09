@@ -61,7 +61,7 @@
                 </td>
                 <td class="px-4 py-3">
                     <div class="flex items-center justify-end gap-2">
-                        {{if $.GeminiEnabled}}
+                        {{if $.LLMEnabled}}
                         <form hx-post="/to-read/{{.ID}}/generate" hx-target="#article-{{.ID}}" hx-swap="outerHTML"
                             class="flex items-center gap-1">
                             <select name="count" class="text-xs border rounded px-1 py-1 w-14">
@@ -75,7 +75,7 @@
                             </button>
                         </form>
                         {{end}}
-                        {{if $.GeminiEnabled}}
+                        {{if $.LLMEnabled}}
                         <a href="/to-read/{{.ID}}/chat" title="Chat about this article"
                             class="text-indigo-400 hover:text-indigo-600 text-sm px-2 py-1 rounded hover:bg-indigo-50">
                             &#x1f4ac;

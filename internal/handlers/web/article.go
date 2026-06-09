@@ -16,18 +16,18 @@ type ArticleHandler struct {
 	articles  *services.ArticleService
 	cards     *services.CardService
 	decks     *services.DeckService
-	gemini    *services.LLMService
+	llm       *services.LLMService
 	wikipedia *services.WikipediaService
 	tmpl      *templates.Registry
 	db        *sql.DB
 }
 
-func NewArticleHandler(articles *services.ArticleService, cards *services.CardService, decks *services.DeckService, gemini *services.LLMService, wikipedia *services.WikipediaService, tmpl *templates.Registry, db *sql.DB) *ArticleHandler {
+func NewArticleHandler(articles *services.ArticleService, cards *services.CardService, decks *services.DeckService, llm *services.LLMService, wikipedia *services.WikipediaService, tmpl *templates.Registry, db *sql.DB) *ArticleHandler {
 	return &ArticleHandler{
 		articles:  articles,
 		cards:     cards,
 		decks:     decks,
-		gemini:    gemini,
+		llm:       llm,
 		wikipedia: wikipedia,
 		tmpl:      tmpl,
 		db:        db,
@@ -47,7 +47,7 @@ func (h *ArticleHandler) ListPage(c echo.Context) error {
 		"IsAdmin":       middleware.IsAdmin(c),
 		"Error":         c.QueryParam("error"),
 		"Success":       c.QueryParam("success"),
-		"GeminiEnabled": h.gemini.IsConfigured(),
+		"LLMEnabled": h.llm.IsConfigured(),
 	})
 }
 
@@ -82,8 +82,8 @@ func (h *ArticleHandler) GenerateFlashcards(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 	articleID := c.Param("id")
 
-	if !h.gemini.IsConfigured() {
-		return c.Redirect(http.StatusSeeOther, "/to-read?error=Gemini+API+key+not+configured")
+	if !h.llm.IsConfigured() {
+		return c.Redirect(http.StatusSeeOther, "/to-read?error=LLM+API+key+not+configured")
 	}
 
 	count, _ := strconv.Atoi(c.FormValue("count"))
@@ -119,7 +119,7 @@ func (h *ArticleHandler) GenerateFlashcards(c echo.Context) error {
 	h.db.QueryRow("SELECT flashcard_prompt FROM users WHERE id = ?", userID).Scan(&customPrompt)
 
 	// Generate flashcards
-	pairs, err := h.gemini.GenerateFlashcards(article.Content, existing, count, customPrompt)
+	pairs, err := h.llm.GenerateFlashcards(article.Content, existing, count, customPrompt)
 	if err != nil {
 		if c.Request().Header.Get("HX-Request") == "true" {
 			return c.String(http.StatusInternalServerError, fmt.Sprintf("Generation failed: %s", err.Error()))
@@ -147,7 +147,7 @@ func (h *ArticleHandler) GenerateFlashcards(c echo.Context) error {
 			if a.ID == articleID {
 				return h.tmpl.ExecuteTemplate(c.Response(), "article_row_partial.html", map[string]interface{}{
 					"Article":       a,
-					"GeminiEnabled": h.gemini.IsConfigured(),
+					"LLMEnabled": h.llm.IsConfigured(),
 					"Message":       fmt.Sprintf("%d cards created", created),
 				})
 			}

@@ -14,15 +14,15 @@ import (
 type ChatHandler struct {
 	articles *services.ArticleService
 	chat     *services.ChatService
-	gemini   *services.LLMService
+	llm      *services.LLMService
 	tmpl     *templates.Registry
 }
 
-func NewChatHandler(articles *services.ArticleService, chat *services.ChatService, gemini *services.LLMService, tmpl *templates.Registry) *ChatHandler {
+func NewChatHandler(articles *services.ArticleService, chat *services.ChatService, llm *services.LLMService, tmpl *templates.Registry) *ChatHandler {
 	return &ChatHandler{
 		articles: articles,
 		chat:     chat,
-		gemini:   gemini,
+		llm:      llm,
 		tmpl:     tmpl,
 	}
 }
@@ -46,7 +46,7 @@ func (h *ChatHandler) ChatPage(c echo.Context) error {
 		"Messages":       messages,
 		"Email":         c.Get(middleware.EmailKey),
 		"IsAdmin":       middleware.IsAdmin(c),
-		"GeminiEnabled":  h.gemini.IsConfigured(),
+		"LLMEnabled":  h.llm.IsConfigured(),
 	})
 }
 
@@ -59,8 +59,8 @@ func (h *ChatHandler) SendMessage(c echo.Context) error {
 		return c.String(http.StatusBadRequest, "Message required")
 	}
 
-	if !h.gemini.IsConfigured() {
-		return c.String(http.StatusServiceUnavailable, "Gemini API not configured")
+	if !h.llm.IsConfigured() {
+		return c.String(http.StatusServiceUnavailable, "LLM API not configured")
 	}
 
 	// Get article for context
@@ -82,9 +82,9 @@ func (h *ChatHandler) SendMessage(c echo.Context) error {
 	}
 
 	// Get AI response
-	response, err := h.gemini.ChatWithArticle(article.Content, history, question)
+	response, err := h.llm.ChatWithArticle(article.Content, history, question)
 	if err != nil {
-		log.Printf("Gemini chat error for article %s: %v", articleID, err)
+		log.Printf("LLM chat error for article %s: %v", articleID, err)
 		return c.String(http.StatusInternalServerError, "Could not get AI response. Please try again.")
 	}
 

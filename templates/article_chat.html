@@ -35,7 +35,7 @@
     </div>
 
     <!-- Input area -->
-    {{if .GeminiEnabled}}
+    {{if .LLMEnabled}}
     <form hx-post="/to-read/{{.Article.ID}}/chat"
           hx-target="#chat-messages"
           hx-swap="beforeend"
@@ -54,7 +54,7 @@
     </div>
     {{else}}
     <div class="text-center text-gray-400 py-4">
-        Gemini API key not configured. Add it in your profile settings.
+        LLM API key not configured. Add it in your profile settings.
     </div>
     {{end}}
 </div>

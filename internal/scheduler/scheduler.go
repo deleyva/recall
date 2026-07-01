@@ -14,6 +14,7 @@ type Scheduler struct {
 
 func New() *Scheduler {
 	params := fsrs.DefaultParam()
+	params.EnableShortTerm = false
 	return &Scheduler{
 		fsrs: fsrs.NewFSRS(params),
 	}

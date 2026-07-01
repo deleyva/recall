@@ -37,9 +37,11 @@ func (s *CronService) GenerateDailyCards() {
 
 	log.Println("[cron] Starting daily card generation")
 
-	// Get all users who have articles
+	// Get users who have articles AND have flashcard generation enabled
 	rows, err := s.db.Query(`
-		SELECT DISTINCT user_id FROM articles
+		SELECT DISTINCT a.user_id FROM articles a
+		JOIN users u ON a.user_id = u.id
+		WHERE u.flashcard_gen_enabled = 1
 	`)
 	if err != nil {
 		log.Printf("[cron] Failed to get users: %v", err)

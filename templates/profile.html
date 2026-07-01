@@ -27,6 +27,15 @@
     <h2 class="text-lg font-semibold mb-4">Study Settings</h2>
     <form action="/profile/settings" method="POST" class="space-y-6">
         <div>
+            <label class="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" name="flashcard_gen_enabled" {{if .FlashcardGenEnabled}}checked{{end}}
+                    class="rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
+                <span class="text-sm font-medium text-gray-700">Auto-generate flashcards</span>
+            </label>
+            <p class="text-xs text-gray-500 mt-1 ml-7">Generate new flashcards nightly from your reading list.</p>
+        </div>
+
+        <div>
             <label for="daily_card_limit" class="block text-sm font-medium text-gray-700 mb-1">Daily flashcard limit</label>
             <input type="number" name="daily_card_limit" id="daily_card_limit" min="1" max="20" value="{{.DailyCardLimit}}"
                 class="w-24 rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">

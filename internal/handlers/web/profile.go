@@ -29,8 +29,8 @@ func (h *ProfileHandler) ProfilePage(c echo.Context) error {
 
 	var dailyCardLimit int
 	var readeckURL, readeckToken, flashcardPrompt string
-	var podcastEnabled int
-	h.db.QueryRow("SELECT daily_card_limit, readeck_url, readeck_api_token, podcast_enabled, flashcard_prompt FROM users WHERE id = ?", userID).Scan(&dailyCardLimit, &readeckURL, &readeckToken, &podcastEnabled, &flashcardPrompt)
+	var podcastEnabled, flashcardGenEnabled int
+	h.db.QueryRow("SELECT daily_card_limit, readeck_url, readeck_api_token, podcast_enabled, flashcard_prompt, flashcard_gen_enabled FROM users WHERE id = ?", userID).Scan(&dailyCardLimit, &readeckURL, &readeckToken, &podcastEnabled, &flashcardPrompt, &flashcardGenEnabled)
 	if dailyCardLimit == 0 {
 		dailyCardLimit = 5
 	}
@@ -51,9 +51,10 @@ func (h *ProfileHandler) ProfilePage(c echo.Context) error {
 		"DailyCardLimit":  dailyCardLimit,
 		"ReadeckURL":      readeckURL,
 		"ReadeckToken":    readeckToken,
-		"PodcastEnabled":  podcastEnabled == 1,
-		"FlashcardPrompt": displayPrompt,
-		"IsDefaultPrompt": flashcardPrompt == "",
+		"PodcastEnabled":      podcastEnabled == 1,
+		"FlashcardGenEnabled": flashcardGenEnabled == 1,
+		"FlashcardPrompt":     displayPrompt,
+		"IsDefaultPrompt":     flashcardPrompt == "",
 	})
 }
 
@@ -79,9 +80,14 @@ func (h *ProfileHandler) UpdateSettings(c echo.Context) error {
 		podcastEnabled = 1
 	}
 
+	flashcardGenEnabled := 0
+	if c.FormValue("flashcard_gen_enabled") == "on" {
+		flashcardGenEnabled = 1
+	}
+
 	_, err = h.db.Exec(
-		"UPDATE users SET daily_card_limit = ?, readeck_url = ?, readeck_api_token = ?, podcast_enabled = ?, flashcard_prompt = ? WHERE id = ?",
-		limit, readeckURL, readeckToken, podcastEnabled, flashcardPrompt, userID,
+		"UPDATE users SET daily_card_limit = ?, readeck_url = ?, readeck_api_token = ?, podcast_enabled = ?, flashcard_prompt = ?, flashcard_gen_enabled = ? WHERE id = ?",
+		limit, readeckURL, readeckToken, podcastEnabled, flashcardPrompt, flashcardGenEnabled, userID,
 	)
 	if err != nil {
 		return c.Redirect(http.StatusSeeOther, "/profile?error="+fmt.Sprintf("Failed+to+save:+%v", err))

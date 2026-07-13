@@ -543,6 +543,130 @@ func (s *ExplorerService) AutoSchedule(goalID string) error {
 }
 
 // GetTimelineData returns nodes grouped by scheduled day
+
+// GoalItem represents a single item in a bulk goal creation request
+type GoalItem struct {
+	Title   string `json:"title"`
+	WikiURL string `json:"wiki_url"`
+	Summary string `json:"summary"`
+}
+
+// CreateGoalWithItems creates a learning goal with pre-populated nodes (no Wikipedia fetching)
+func (s *ExplorerService) CreateGoalWithItems(userID, title string, timeHorizon int, items []GoalItem) (*models.LearningGoal, error) {
+	if len(items) == 0 {
+		return nil, fmt.Errorf("at least one item is required")
+	}
+
+	// Derive lang from first item's wiki_url
+	lang := "en"
+	if parsed, err := url.Parse(items[0].WikiURL); err == nil {
+		parts := strings.Split(parsed.Hostname(), ".")
+		if len(parts) > 0 && parts[0] != "" {
+			lang = parts[0]
+		}
+	}
+
+	goalID := generateID()
+	now := time.Now().UTC()
+
+	_, err := s.db.Exec(`
+		INSERT INTO learning_goals (id, user_id, title, seed_url, seed_title, seed_lang, time_horizon, daily_pace, status, thumb_url, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'active', '', ?)
+	`, goalID, userID, title, items[0].WikiURL, title, lang, timeHorizon, now.Format(time.RFC3339))
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			return nil, fmt.Errorf("goal already exists for this article")
+		}
+		return nil, fmt.Errorf("create goal: %w", err)
+	}
+
+	// Create nodes for each item
+	for i, item := range items {
+		nodeID := generateID()
+		day := i + 1 // 1-based position
+		_, err := s.db.Exec(`
+			INSERT INTO graph_nodes (id, goal_id, wiki_title, wiki_url, summary, thumb_url, depth, status, scheduled_day, sort_order, relevance_score, created_at)
+			VALUES (?, ?, ?, ?, ?, '', 0, 'queued', ?, ?, 1.0, ?)
+		`, nodeID, goalID, item.Title, item.WikiURL, item.Summary, day, day, now.Format(time.RFC3339))
+		if err != nil {
+			continue
+		}
+	}
+
+	goal := &models.LearningGoal{
+		ID:          goalID,
+		UserID:      userID,
+		Title:       title,
+		SeedURL:     items[0].WikiURL,
+		SeedTitle:   title,
+		SeedLang:    lang,
+		TimeHorizon: timeHorizon,
+		DailyPace:   1,
+		Status:      "active",
+		ThumbURL:    "",
+		CreatedAt:   now,
+	}
+	return goal, nil
+}
+
+// GetNextQueuedNode returns the next queued node for a goal, ordered by scheduled_day
+func (s *ExplorerService) GetNextQueuedNode(goalID, userID string) (*models.GraphNode, error) {
+	// Verify goal belongs to user
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM learning_goals WHERE id = ? AND user_id = ?`, goalID, userID).Scan(&count)
+	if err != nil || count == 0 {
+		return nil, fmt.Errorf("goal not found")
+	}
+
+	var n models.GraphNode
+	var createdAt string
+	err = s.db.QueryRow(`
+		SELECT id, goal_id, wiki_title, wiki_url, summary, thumb_url, depth, status, article_id, scheduled_day, sort_order, relevance_score, created_at
+		FROM graph_nodes
+		WHERE goal_id = ? AND status = 'queued'
+		ORDER BY scheduled_day ASC
+		LIMIT 1
+	`, goalID).Scan(&n.ID, &n.GoalID, &n.WikiTitle, &n.WikiURL, &n.Summary, &n.ThumbURL,
+		&n.Depth, &n.Status, &n.ArticleID, &n.ScheduledDay, &n.SortOrder, &n.RelevanceScore, &createdAt)
+	if err != nil {
+		return nil, nil // no queued nodes
+	}
+	n.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
+	return &n, nil
+}
+
+// CompleteNode marks a node as 'added' with an article_id, and completes the goal if all nodes are done
+func (s *ExplorerService) CompleteNode(goalID, nodeID, articleID, userID string) (*models.GraphNode, error) {
+	// Verify goal belongs to user
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM learning_goals WHERE id = ? AND user_id = ?`, goalID, userID).Scan(&count)
+	if err != nil || count == 0 {
+		return nil, fmt.Errorf("goal not found")
+	}
+
+	result, err := s.db.Exec(`
+		UPDATE graph_nodes SET status = 'added', article_id = ?
+		WHERE id = ? AND goal_id = ?
+	`, articleID, nodeID, goalID)
+	if err != nil {
+		return nil, fmt.Errorf("update node: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return nil, fmt.Errorf("node not found")
+	}
+
+	// Check if all nodes are done (no queued nodes remain)
+	var queuedCount int
+	s.db.QueryRow(`SELECT COUNT(*) FROM graph_nodes WHERE goal_id = ? AND status = 'queued'`, goalID).Scan(&queuedCount)
+	if queuedCount == 0 {
+		s.db.Exec(`UPDATE learning_goals SET status = 'complete' WHERE id = ?`, goalID)
+	}
+
+	// Return the updated node
+	return s.GetNode(goalID, nodeID)
+}
+
 func (s *ExplorerService) GetTimelineData(goalID string, timeHorizon int) map[int][]models.GraphNode {
 	timeline := make(map[int][]models.GraphNode)
 

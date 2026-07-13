@@ -146,7 +146,7 @@ func main() {
 	profileHandler := web.NewProfileHandler(tokenService, tmpl, db)
 
 	// API handler
-	apiHandler := api.NewHandler(authService, deckService, cardService, reviewService, articleService, llmService, podcastService, playlistService, sched, authMw, db)
+	apiHandler := api.NewHandler(authService, deckService, cardService, reviewService, articleService, llmService, podcastService, playlistService, sched, authMw, db, explorerService)
 
 	// Start cron jobs (disabled in dev mode)
 	c := cron.New()
@@ -282,6 +282,11 @@ func main() {
 	apiAuth.DELETE("/playlists/:id/decks/:deckID", apiHandler.UnlinkPlaylistDeck)
 	apiAuth.GET("/podcasts/pending", apiHandler.ListPendingPodcasts)
 	apiAuth.PUT("/podcasts/:id/status", apiHandler.UpdatePodcastStatus)
+	// Explorer API endpoints
+	apiAuth.GET("/explore", apiHandler.ListExploreGoals)
+	apiAuth.POST("/explore", apiHandler.CreateExploreGoal)
+	apiAuth.GET("/explore/:id/next", apiHandler.GetNextExploreNode)
+	apiAuth.PATCH("/explore/:id/nodes/:nodeID/complete", apiHandler.CompleteExploreNode)
 
 	log.Printf("Recall starting on :%s", cfg.Port)
 	e.Logger.Fatal(e.Start(fmt.Sprintf(":%s", cfg.Port)))

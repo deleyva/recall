@@ -1,0 +1,59 @@
+{{define "search.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "content"}}
+<h1 class="text-2xl font-bold mb-6">Search</h1>
+
+<form action="/search" method="GET" class="mb-6">
+    <div class="relative">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"
+            class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+        </svg>
+        <input type="search" name="q" value="{{.Query}}" autofocus autocomplete="off"
+            placeholder="Search everything you've saved — articles, flashcards, chats…"
+            class="w-full rounded-lg border border-gray-300 dark:border-gray-600 pl-10 pr-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            hx-get="/search/results"
+            hx-trigger="input changed delay:300ms, search"
+            hx-target="#search-results"
+            hx-swap="innerHTML"
+            hx-include="[name='kind']"
+            hx-indicator="#search-spinner">
+        <div id="search-spinner" class="htmx-indicator absolute right-3 top-1/2 -translate-y-1/2">
+            <svg class="w-5 h-5 animate-spin text-indigo-500" viewBox="0 0 24 24" fill="none">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4z"></path>
+            </svg>
+        </div>
+    </div>
+
+    <div class="flex flex-wrap gap-2 mt-3 text-sm">
+        {{$kind := .Kind}}
+        <label class="cursor-pointer">
+            <input type="radio" name="kind" value="" class="sr-only peer" {{if eq $kind ""}}checked{{end}}
+                hx-get="/search/results" hx-trigger="change" hx-target="#search-results" hx-swap="innerHTML" hx-include="[name='q']">
+            <span class="px-3 py-1 rounded-full border border-gray-300 dark:border-gray-600 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-600">Everything</span>
+        </label>
+        <label class="cursor-pointer">
+            <input type="radio" name="kind" value="article" class="sr-only peer" {{if eq $kind "article"}}checked{{end}}
+                hx-get="/search/results" hx-trigger="change" hx-target="#search-results" hx-swap="innerHTML" hx-include="[name='q']">
+            <span class="px-3 py-1 rounded-full border border-gray-300 dark:border-gray-600 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-600">Articles</span>
+        </label>
+        <label class="cursor-pointer">
+            <input type="radio" name="kind" value="flashcard" class="sr-only peer" {{if eq $kind "flashcard"}}checked{{end}}
+                hx-get="/search/results" hx-trigger="change" hx-target="#search-results" hx-swap="innerHTML" hx-include="[name='q']">
+            <span class="px-3 py-1 rounded-full border border-gray-300 dark:border-gray-600 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-600">Flashcards</span>
+        </label>
+        <label class="cursor-pointer">
+            <input type="radio" name="kind" value="chat" class="sr-only peer" {{if eq $kind "chat"}}checked{{end}}
+                hx-get="/search/results" hx-trigger="change" hx-target="#search-results" hx-swap="innerHTML" hx-include="[name='q']">
+            <span class="px-3 py-1 rounded-full border border-gray-300 dark:border-gray-600 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-600">Chats</span>
+        </label>
+    </div>
+</form>
+
+<div id="search-results">
+    {{template "search_results_partial.html" .}}
+</div>
+{{end}}

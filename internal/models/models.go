@@ -33,6 +33,40 @@ type Article struct {
 	FlashcardCount int       `json:"flashcard_count,omitempty"`
 }
 
+// ArticleDetail is an Article with its stored text. Kept separate from Article
+// so list endpoints stay small — only single-article reads carry the body.
+type ArticleDetail struct {
+	Article
+	Content string `json:"content"`
+}
+
+const (
+	SearchKindArticle   = "article"
+	SearchKindFlashcard = "flashcard"
+	SearchKindChat      = "chat"
+)
+
+// SearchResult is one hit from the full-text index. Snippet is pre-escaped HTML
+// with the matched terms wrapped in <mark>.
+type SearchResult struct {
+	Kind      string  `json:"kind"`
+	ID        string  `json:"id"`
+	Title     string  `json:"title"`
+	Snippet   string  `json:"snippet"`
+	URL       string  `json:"url,omitempty"`
+	ArticleID string  `json:"article_id,omitempty"`
+	DeckID    string  `json:"deck_id,omitempty"`
+	Score     float64 `json:"score"`
+}
+
+type SearchResponse struct {
+	Query   string         `json:"query"`
+	Total   int            `json:"total"`
+	Limit   int            `json:"limit"`
+	Offset  int            `json:"offset"`
+	Results []SearchResult `json:"results"`
+}
+
 type Card struct {
 	ID            string    `json:"id"`
 	DeckID        string    `json:"deck_id"`
@@ -164,44 +198,5 @@ type PlaylistDeck struct {
 	DeckID     string `json:"deck_id"`
 }
 
-type LearningGoal struct {
-	ID          string    `json:"id"`
-	UserID      string    `json:"user_id"`
-	Title       string    `json:"title"`
-	SeedURL     string    `json:"seed_url"`
-	SeedTitle   string    `json:"seed_title"`
-	SeedLang    string    `json:"seed_lang"`
-	TimeHorizon int       `json:"time_horizon"`
-	DailyPace   int       `json:"daily_pace"`
-	Status      string    `json:"status"`
-	ThumbURL    string    `json:"thumb_url"`
-	CreatedAt   time.Time `json:"created_at"`
-	// Computed
-	TotalNodes  int `json:"total_nodes,omitempty"`
-	QueuedNodes int `json:"queued_nodes,omitempty"`
-	AddedNodes  int `json:"added_nodes,omitempty"`
-	DayNumber   int `json:"day_number,omitempty"`
-}
 
-type GraphNode struct {
-	ID             string    `json:"id"`
-	GoalID         string    `json:"goal_id"`
-	WikiTitle      string    `json:"wiki_title"`
-	WikiURL        string    `json:"wiki_url"`
-	Summary        string    `json:"summary"`
-	ThumbURL       string    `json:"thumb_url"`
-	Depth          int       `json:"depth"`
-	Status         string    `json:"status"`
-	ArticleID      *string   `json:"article_id,omitempty"`
-	ScheduledDay   *int      `json:"scheduled_day,omitempty"`
-	SortOrder      int       `json:"sort_order"`
-	RelevanceScore float64   `json:"relevance_score"`
-	CreatedAt      time.Time `json:"created_at"`
-}
 
-type GraphEdge struct {
-	ID           string `json:"id"`
-	GoalID       string `json:"goal_id"`
-	SourceNodeID string `json:"source_node_id"`
-	TargetNodeID string `json:"target_node_id"`
-}

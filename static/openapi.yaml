@@ -2,9 +2,18 @@ openapi: "3.0.3"
 info:
   title: Recall API
   description: |
-    Recall is a spaced repetition flashcard app with a reading list feature.
-    Authenticate using Bearer tokens generated from the Profile page.
-  version: "1.0.0"
+    Recall is a spaced repetition app with a reading list, AI flashcard
+    generation, per-article chat, playlists and podcasts.
+
+    Every path below is registered by `api.RegisterRoutes`; `recall routes`
+    prints the live table and a test diffs it against this file, so the spec
+    cannot drift from the router.
+
+    **Auth** — send `Authorization: Bearer rcl_...` (create a token on the
+    Profile page or via `POST /me/tokens`). Session cookies work too, for the
+    web UI. `GET /health` is the only unauthenticated endpoint besides the
+    auth ones.
+  version: "2.0.0"
 
 servers:
   - url: /api/v1
@@ -13,191 +22,674 @@ servers:
 security:
   - BearerAuth: []
 
+tags:
+  - name: System
+  - name: Auth
+  - name: Account
+  - name: Search
+  - name: Articles
+  - name: Decks
+  - name: Cards
+  - name: Study
+  - name: Playlists
+  - name: Podcasts
+  - name: Stats
+
 components:
   securitySchemes:
     BearerAuth:
       type: http
       scheme: bearer
-      description: "API token from Profile page (format: rcl_...)"
+      description: "API token (format: rcl_...)"
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
 
   schemas:
-    Article:
+    Error:
       type: object
       properties:
-        id:
-          type: string
-        user_id:
-          type: string
-        url:
-          type: string
-        title:
-          type: string
-        domain:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-        flashcard_count:
-          type: integer
+        error: { type: string }
+
+    Message:
+      type: object
+      properties:
+        message: { type: string }
+
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        is_admin: { type: boolean }
+        created_at: { type: string, format: date-time }
+        settings: { $ref: "#/components/schemas/Settings" }
+
+    Settings:
+      type: object
+      properties:
+        daily_card_limit: { type: integer, minimum: 1, maximum: 20 }
+        podcast_enabled: { type: boolean }
+        flashcard_gen_enabled: { type: boolean }
+        flashcard_prompt: { type: string }
+        readeck_url: { type: string }
+        readeck_configured:
+          type: boolean
+          description: True when a Readeck API token is stored. The token itself is never returned.
+
+    APIToken:
+      type: object
+      properties:
+        id: { type: string }
+        user_id: { type: string }
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+
+    Article:
+      type: object
+      description: Article without its stored text — the shape returned by list endpoints.
+      properties:
+        id: { type: string }
+        user_id: { type: string }
+        url: { type: string, format: uri }
+        title: { type: string }
+        domain: { type: string }
+        created_at: { type: string, format: date-time }
+        flashcard_count: { type: integer }
+
+    ArticleDetail:
+      allOf:
+        - $ref: "#/components/schemas/Article"
+        - type: object
+          properties:
+            content:
+              type: string
+              description: The full stored text, up to 50KB.
 
     Deck:
       type: object
       properties:
-        id:
-          type: string
-        user_id:
-          type: string
-        name:
-          type: string
-        description:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-        due_count:
-          type: integer
+        id: { type: string }
+        user_id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        created_at: { type: string, format: date-time }
+        due_count: { type: integer }
 
     Card:
       type: object
       properties:
-        id:
-          type: string
-        deck_id:
-          type: string
-        article_id:
-          type: string
-          nullable: true
-        front:
-          type: string
-        back:
-          type: string
-        due:
-          type: string
-          format: date-time
+        id: { type: string }
+        deck_id: { type: string }
+        article_id: { type: string, nullable: true }
+        front: { type: string }
+        back: { type: string }
+        due: { type: string, format: date-time }
+        stability: { type: number }
+        difficulty: { type: number }
+        elapsed_days: { type: integer }
+        scheduled_days: { type: integer }
+        reps: { type: integer }
+        lapses: { type: integer }
         state:
           type: integer
+          description: "FSRS state: 0 new, 1 learning, 2 review, 3 relearning"
+        last_review: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
 
-    Error:
+    CardList:
       type: object
       properties:
-        error:
+        cards:
+          type: array
+          items: { $ref: "#/components/schemas/Card" }
+        total: { type: integer }
+
+    ChatMessage:
+      type: object
+      properties:
+        id: { type: string }
+        article_id: { type: string }
+        user_id: { type: string }
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string }
+        created_at: { type: string, format: date-time }
+
+    SearchResult:
+      type: object
+      properties:
+        kind: { type: string, enum: [article, flashcard, chat] }
+        id: { type: string }
+        title: { type: string }
+        snippet:
           type: string
+          description: HTML-escaped excerpt with matched terms wrapped in <mark>.
+        url:
+          type: string
+          description: Web UI link to the matched item.
+        article_id: { type: string }
+        deck_id: { type: string }
+        score:
+          type: number
+          description: bm25 relevance — lower is a better match.
+
+    SearchResponse:
+      type: object
+      properties:
+        query: { type: string }
+        total: { type: integer }
+        limit: { type: integer }
+        offset: { type: integer }
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/SearchResult" }
+
+    Playlist:
+      type: object
+      properties:
+        id: { type: string }
+        user_id: { type: string }
+        title: { type: string }
+        description: { type: string }
+        url: { type: string, format: uri }
+        type: { type: string, enum: [spotify, youtube] }
+        external_id: { type: string }
+        created_at: { type: string, format: date-time }
+        articles:
+          type: array
+          items: { $ref: "#/components/schemas/Article" }
+        decks:
+          type: array
+          items: { $ref: "#/components/schemas/Deck" }
+
+    Podcast:
+      type: object
+      properties:
+        id: { type: string }
+        user_id: { type: string }
+        title: { type: string }
+        status: { type: string, enum: [pending, processing, completed, failed] }
+        audio_url: { type: string }
+        notebook_id: { type: string }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+        article_count: { type: integer }
+        articles:
+          type: array
+          items: { $ref: "#/components/schemas/Article" }
+
+    Stats:
+      type: object
+      properties:
+        total_cards: { type: integer }
+        due_today: { type: integer }
+        streak: { type: integer }
+
+    StudyCard:
+      type: object
+      properties:
+        card:
+          allOf: [{ $ref: "#/components/schemas/Card" }]
+          nullable: true
+        due_count: { type: integer }
+        intervals:
+          type: object
+          description: Preview of the next interval per rating (1-4).
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found, or not owned by the caller
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
 
 paths:
-  /articles:
+  /health:
     get:
-      summary: List reading list articles
-      operationId: listArticles
-      tags: [Articles]
+      tags: [System]
+      summary: Liveness check
+      security: []
       responses:
         "200":
-          description: List of articles
+          description: Service status
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Article"
+                type: object
+                properties:
+                  status: { type: string, enum: [ok, degraded] }
+                  api: { type: string }
 
+  /auth/register:
     post:
-      summary: Add article to reading list
-      operationId: createArticle
-      tags: [Articles]
+      tags: [Auth]
+      summary: Register a new account
+      security: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [url]
+              required: [email, password]
               properties:
-                url:
-                  type: string
-                  description: Article URL to add
-                  example: "https://en.wikipedia.org/wiki/Bossa_nova"
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
       responses:
         "201":
-          description: Article created
+          description: Created
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/Article"
-        "400":
-          description: Invalid URL or already added
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: Email already registered
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
+              schema: { $ref: "#/components/schemas/Error" }
 
-  /articles/{id}:
-    delete:
-      summary: Delete article and associated flashcards
-      operationId: deleteArticle
-      tags: [Articles]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in and receive a session cookie
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
       responses:
         "200":
-          description: Deleted
-        "404":
-          description: Not found
+          description: Logged in
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
-  /articles/{id}/generate:
+  /auth/logout:
     post:
-      summary: Generate flashcards from article via Gemini AI
-      operationId: generateArticleCards
-      tags: [Articles]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+      tags: [Auth]
+      summary: Clear the session cookie
+      security: []
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+
+  /me:
+    get:
+      tags: [Account]
+      summary: The authenticated user and their settings
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /me/settings:
+    put:
+      tags: [Account]
+      summary: Update settings
+      description: Only the fields present in the body are changed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                daily_card_limit: { type: integer, minimum: 1, maximum: 20 }
+                podcast_enabled: { type: boolean }
+                flashcard_gen_enabled: { type: boolean }
+                flashcard_prompt: { type: string }
+                readeck_url: { type: string }
+                readeck_api_token: { type: string }
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /me/tokens:
+    get:
+      tags: [Account]
+      summary: List API tokens
+      responses:
+        "200":
+          description: Tokens
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/APIToken" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Account]
+      summary: Create an API token
+      description: The raw token is returned once and stored only as a hash.
       requestBody:
         content:
           application/json:
             schema:
               type: object
               properties:
-                count:
-                  type: integer
-                  default: 5
-                  minimum: 1
-                  maximum: 20
+                name: { type: string }
       responses:
-        "200":
-          description: Cards generated
+        "201":
+          description: Token created
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  generated:
-                    type: integer
+                  token: { type: string }
+                  meta: { $ref: "#/components/schemas/APIToken" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
-  /decks:
-    get:
-      summary: List decks
-      operationId: listDecks
-      tags: [Decks]
+  /me/tokens/{id}:
+    delete:
+      tags: [Account]
+      summary: Revoke an API token
+      parameters: [{ $ref: "#/components/parameters/Id" }]
       responses:
         "200":
-          description: List of decks
+          description: Deleted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /search:
+    get:
+      tags: [Search]
+      summary: Full-text search across every stored text
+      description: |
+        Searches article bodies, flashcard fronts and backs, and chat messages
+        belonging to the caller. Accent- and case-insensitive; the last word is
+        treated as a prefix, so search-as-you-type works. An empty or
+        symbol-only query returns zero results rather than an error.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema: { type: string }
+          example: canto gregoriano
+        - name: kind
+          in: query
+          description: Comma-separated filter — article, flashcard, chat.
+          schema: { type: string }
+          example: article,flashcard
+        - name: limit
+          in: query
+          schema: { type: integer, default: 20, maximum: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        "200":
+          description: Results ranked by relevance
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SearchResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /search/reindex:
+    post:
+      tags: [Search]
+      summary: Rebuild the search index (admin)
+      description: Triggers keep the index current; this is the repair path.
+      responses:
+        "200":
+          description: Rebuilt
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  indexed: { type: integer }
+        "403":
+          description: Admin only
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /articles:
+    get:
+      tags: [Articles]
+      summary: List saved articles
+      description: Bodies are omitted here — fetch one article for its text.
+      responses:
+        "200":
+          description: Articles
           content:
             application/json:
               schema:
                 type: array
-                items:
-                  $ref: "#/components/schemas/Deck"
-
+                items: { $ref: "#/components/schemas/Article" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
     post:
-      summary: Create deck
-      operationId: createDeck
+      tags: [Articles]
+      summary: Save an article
+      description: With `content`, the text is stored as given; without it, Recall fetches the URL and extracts the text.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url: { type: string, format: uri }
+                title: { type: string }
+                content: { type: string }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Article" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /articles/{id}:
+    get:
+      tags: [Articles]
+      summary: Get one article with its stored text
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Article with content
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArticleDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Articles]
+      summary: Update an article's title or text
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                content: { type: string }
+      responses:
+        "200":
+          description: Updated article
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArticleDetail" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Articles]
+      summary: Delete an article and its flashcards
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /articles/{id}/content:
+    get:
+      tags: [Articles]
+      summary: Get the stored text as plain text
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: The stored text
+          content:
+            text/plain:
+              schema: { type: string }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /articles/{id}/cards:
+    get:
+      tags: [Articles]
+      summary: Flashcards generated from this article
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Cards
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CardList" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /articles/{id}/generate:
+    post:
+      tags: [Articles]
+      summary: Generate flashcards from the article with the LLM
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                count: { type: integer, default: 5, maximum: 20 }
+      responses:
+        "200":
+          description: Generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated: { type: integer }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503":
+          description: LLM not configured
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /articles/{id}/chat:
+    get:
+      tags: [Articles]
+      summary: Chat history for this article
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items: { $ref: "#/components/schemas/ChatMessage" }
+                  total: { type: integer }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Articles]
+      summary: Ask a question about the article
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message: { type: string }
+      responses:
+        "201":
+          description: Question and answer, both persisted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  question: { $ref: "#/components/schemas/ChatMessage" }
+                  answer: { $ref: "#/components/schemas/ChatMessage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "503":
+          description: LLM not configured
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+    delete:
+      tags: [Articles]
+      summary: Clear the chat history for this article
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Cleared
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /decks:
+    get:
       tags: [Decks]
+      summary: List decks with due counts
+      responses:
+        "200":
+          description: Decks
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Deck" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Decks]
+      summary: Create a deck
       requestBody:
         required: true
         content:
@@ -206,62 +698,82 @@ paths:
               type: object
               required: [name]
               properties:
-                name:
-                  type: string
-                description:
-                  type: string
+                name: { type: string }
+                description: { type: string }
       responses:
         "201":
-          description: Deck created
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Deck" }
 
   /decks/{id}:
     get:
-      summary: Get deck
-      operationId: getDeck
       tags: [Decks]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+      summary: Get a deck
+      parameters: [{ $ref: "#/components/parameters/Id" }]
       responses:
         "200":
-          description: Deck details
+          description: Deck
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Deck" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Decks]
+      summary: Update a deck
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                description: { type: string }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Decks]
+      summary: Delete a deck and its cards
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /decks/{id}/cards:
     get:
-      summary: List cards in deck
-      operationId: listCards
-      tags: [Cards]
+      tags: [Decks]
+      summary: List cards in a deck
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+        - { $ref: "#/components/parameters/Id" }
         - name: page
           in: query
-          schema:
-            type: integer
+          schema: { type: integer, default: 1 }
         - name: per_page
           in: query
-          schema:
-            type: integer
+          schema: { type: integer, default: 50, maximum: 100 }
       responses:
         "200":
-          description: List of cards
-
+          description: Cards
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CardList" }
+        "404": { $ref: "#/components/responses/NotFound" }
     post:
-      summary: Create card
-      operationId: createCard
-      tags: [Cards]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+      tags: [Decks]
+      summary: Create a card in a deck
+      parameters: [{ $ref: "#/components/parameters/Id" }]
       requestBody:
         required: true
         content:
@@ -270,19 +782,437 @@ paths:
               type: object
               required: [front, back]
               properties:
-                front:
-                  type: string
-                back:
-                  type: string
+                front: { type: string }
+                back: { type: string }
       responses:
         "201":
-          description: Card created
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Card" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /decks/{id}/import:
+    post:
+      tags: [Decks]
+      summary: Bulk-import cards from CSV/TSV
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "200":
+          description: Imported
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imported: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /decks/{id}/study:
+    get:
+      tags: [Study]
+      summary: Next due card in a deck
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Card to study, or null when nothing is due
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StudyCard" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Study]
+      summary: Submit a review and get the next card
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [card_id, rating]
+              properties:
+                card_id: { type: string }
+                rating:
+                  type: integer
+                  minimum: 1
+                  maximum: 4
+                  description: 1 Again, 2 Hard, 3 Good, 4 Easy
+      responses:
+        "200":
+          description: Scheduling applied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  due_count: { type: integer }
+                  next_card: { $ref: "#/components/schemas/Card" }
+                  intervals: { type: object }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403":
+          description: Deck not owned by the caller
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /cards:
+    get:
+      tags: [Cards]
+      summary: List cards across all decks
+      parameters:
+        - name: deck_id
+          in: query
+          schema: { type: string }
+        - name: article_id
+          in: query
+          schema: { type: string }
+        - name: due
+          in: query
+          description: "true to return only cards due now"
+          schema: { type: string, enum: ["true"] }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50, maximum: 200 }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+      responses:
+        "200":
+          description: Cards
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CardList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /cards/{id}:
+    get:
+      tags: [Cards]
+      summary: Get a card
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Card
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Card" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Cards]
+      summary: Update a card's front and back
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                front: { type: string }
+                back: { type: string }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Cards]
+      summary: Delete a card
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /playlists:
+    get:
+      tags: [Playlists]
+      summary: List playlists
+      responses:
+        "200":
+          description: Playlists
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Playlist" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Playlists]
+      summary: Add a Spotify or YouTube playlist
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url: { type: string, format: uri }
+                title: { type: string }
+                description: { type: string }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Playlist" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /playlists/{id}:
+    get:
+      tags: [Playlists]
+      summary: Get a playlist with its linked articles and decks
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Playlist
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Playlist" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Playlists]
+      summary: Delete a playlist
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /playlists/{id}/articles:
+    post:
+      tags: [Playlists]
+      summary: Link an article to a playlist
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [article_id]
+              properties:
+                article_id: { type: string }
+      responses:
+        "200":
+          description: Linked
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /playlists/{id}/articles/{articleID}:
+    delete:
+      tags: [Playlists]
+      summary: Unlink an article from a playlist
+      parameters:
+        - { $ref: "#/components/parameters/Id" }
+        - name: articleID
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Unlinked
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /playlists/{id}/decks:
+    post:
+      tags: [Playlists]
+      summary: Link a deck to a playlist
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deck_id]
+              properties:
+                deck_id: { type: string }
+      responses:
+        "200":
+          description: Linked
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /playlists/{id}/decks/{deckID}:
+    delete:
+      tags: [Playlists]
+      summary: Unlink a deck from a playlist
+      parameters:
+        - { $ref: "#/components/parameters/Id" }
+        - name: deckID
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Unlinked
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /podcasts:
+    get:
+      tags: [Podcasts]
+      summary: List podcasts
+      responses:
+        "200":
+          description: Podcasts
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Podcast" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Podcasts]
+      summary: Queue a podcast from up to 10 articles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [article_ids]
+              properties:
+                title: { type: string }
+                article_ids:
+                  type: array
+                  items: { type: string }
+      responses:
+        "201":
+          description: Queued as pending
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Podcast" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /podcasts/pending:
+    get:
+      tags: [Podcasts]
+      summary: Podcasts waiting to be produced
+      description: The queue the external NotebookLM worker polls.
+      responses:
+        "200":
+          description: Pending podcasts
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Podcast" }
+
+  /podcasts/{id}:
+    get:
+      tags: [Podcasts]
+      summary: Get a podcast with its articles
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Podcast
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Podcast" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Podcasts]
+      summary: Delete a podcast
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /podcasts/{id}/content:
+    get:
+      tags: [Podcasts]
+      summary: Concatenated source text behind a podcast
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      responses:
+        "200":
+          description: Article text
+          content:
+            text/plain:
+              schema: { type: string }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /podcasts/{id}/status:
+    put:
+      tags: [Podcasts]
+      summary: Report production status
+      parameters: [{ $ref: "#/components/parameters/Id" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [processing, completed, failed] }
+                audio_url: { type: string }
+                notebook_id: { type: string }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Message" }
+        "400": { $ref: "#/components/responses/BadRequest" }
 
   /stats:
     get:
-      summary: Get user statistics
-      operationId: getStats
       tags: [Stats]
+      summary: Card totals, due count and review streak
       responses:
         "200":
-          description: User stats
+          description: Stats
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Stats" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /stats/history:
+    get:
+      tags: [Stats]
+      summary: Daily review counts
+      responses:
+        "200":
+          description: History
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    date: { type: string, format: date }
+                    reviews: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }

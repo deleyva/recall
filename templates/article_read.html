@@ -1,0 +1,67 @@
+{{define "article_read.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "content"}}
+<div class="max-w-2xl mx-auto">
+    <div class="flex items-center justify-between gap-4 mb-4 text-sm">
+        <a href="/to-read" class="text-indigo-600 dark:text-indigo-400 hover:underline">&larr; To Read</a>
+        <div class="flex items-center gap-2">
+            <button onclick="stepFont(-1)" title="Smaller text" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">A&minus;</button>
+            <button onclick="stepFont(1)" title="Larger text" class="px-2 py-1 rounded border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">A+</button>
+        </div>
+    </div>
+
+    <h1 class="text-3xl font-bold leading-tight mb-2 break-words">{{if .Article.Title}}{{.Article.Title}}{{else}}{{.Article.URL}}{{end}}</h1>
+
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-500 mb-6">
+        {{if .Article.Domain}}<span>{{.Article.Domain}}</span>{{end}}
+        {{if gt .WordCount 0}}<span>·</span><span>{{.WordCount}} words · ~{{.ReadingMinutes}} min</span>{{end}}
+        <span>·</span>
+        <a href="{{.Article.URL}}" target="_blank" rel="noopener" class="text-indigo-600 dark:text-indigo-400 hover:underline">Original</a>
+        {{if .LLMEnabled}}
+        <span>·</span>
+        <a href="/to-read/{{.Article.ID}}/chat" class="text-indigo-600 dark:text-indigo-400 hover:underline">Chat</a>
+        {{end}}
+    </div>
+
+    {{if .Query}}
+    <div class="mb-6 text-sm bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 px-4 py-2 rounded-lg">
+        Highlighting “{{.Query}}” — <a href="/search?q={{.Query}}" class="underline">back to results</a>
+    </div>
+    {{end}}
+
+    {{if .Empty}}
+    <div class="text-center py-12 text-gray-500">
+        <p class="text-lg mb-2">No stored text for this article</p>
+        <p class="text-sm">Recall saved the link but not the body — open the original above.</p>
+    </div>
+    {{else}}
+    <article id="reader" class="reader-body text-gray-800 dark:text-gray-200">
+        {{range .Paragraphs}}
+        <p>{{. | safeHTML}}</p>
+        {{end}}
+    </article>
+    {{end}}
+</div>
+
+<style>
+    .reader-body { font-size: var(--reader-size, 1.125rem); line-height: 1.75; }
+    .reader-body p { margin-bottom: 1.25em; overflow-wrap: break-word; }
+    .reader-body mark { background-color: #fde68a; color: inherit; padding: 0 .1em; border-radius: 2px; }
+    .dark .reader-body mark { background-color: #92400e; color: #fef3c7; }
+</style>
+<script>
+    (function () {
+        const SIZES = [0.95, 1.0625, 1.125, 1.25, 1.4];
+        let idx = parseInt(localStorage.readerSize ?? '2', 10);
+        function apply() {
+            idx = Math.max(0, Math.min(SIZES.length - 1, idx));
+            document.documentElement.style.setProperty('--reader-size', SIZES[idx] + 'rem');
+            localStorage.readerSize = idx;
+        }
+        window.stepFont = function (delta) { idx += delta; apply(); };
+        apply();
+    })();
+</script>
+{{end}}

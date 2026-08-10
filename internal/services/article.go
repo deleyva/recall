@@ -203,6 +203,36 @@ func (s *ArticleService) Get(userID, articleID string) (*models.Article, error) 
 	return &a, nil
 }
 
+// Update changes an article's stored title and text. Empty fields are left
+// untouched, so a caller can fix a title without resending 50KB of body.
+func (s *ArticleService) Update(userID, articleID, title, content string) error {
+	current, err := s.Get(userID, articleID)
+	if err != nil {
+		return fmt.Errorf("article not found")
+	}
+	if title == "" {
+		title = current.Title
+	}
+	if content == "" {
+		content = current.Content
+	}
+	if len(content) > 50*1024 {
+		content = content[:50*1024]
+	}
+
+	result, err := s.db.Exec(
+		"UPDATE articles SET title = ?, content = ? WHERE id = ? AND user_id = ?",
+		title, content, articleID, userID,
+	)
+	if err != nil {
+		return fmt.Errorf("update article: %w", err)
+	}
+	if rows, _ := result.RowsAffected(); rows == 0 {
+		return fmt.Errorf("article not found")
+	}
+	return nil
+}
+
 func (s *ArticleService) Delete(userID, articleID string) error {
 	tx, err := s.db.Begin()
 	if err != nil {

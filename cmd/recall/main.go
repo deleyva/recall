@@ -80,6 +80,20 @@ func main() {
 			}
 			fmt.Println(rawToken)
 			return
+		case "reindex":
+			count, err := services.NewSearchService(db).Reindex()
+			if err != nil {
+				log.Fatalf("Failed: %v", err)
+			}
+			fmt.Printf("Search index rebuilt: %d entries\n", count)
+			return
+		case "routes":
+			e := echo.New()
+			(&api.Handler{}).RegisterRoutes(e.Group("/api/v1"), func(next echo.HandlerFunc) echo.HandlerFunc { return next })
+			for _, r := range e.Routes() {
+				fmt.Printf("%-7s %s\n", r.Method, r.Path)
+			}
+			return
 		case "set-admin":
 			if len(os.Args) < 3 {
 				fmt.Println("Usage: recall set-admin <email>")
@@ -108,9 +122,9 @@ func main() {
 	tokenService := services.NewTokenService(db)
 	wikipediaService := services.NewWikipediaService()
 	chatService := services.NewChatService(db)
+	searchService := services.NewSearchService(db)
 	podcastService := services.NewPodcastService(db)
 	playlistService := services.NewPlaylistService(db)
-	explorerService := services.NewExplorerService(db, wikipediaService)
 	cronService := services.NewCronService(db, articleService, cardService, llmService, podcastService)
 	readeckService := services.NewReadeckService(db, articleService)
 	sched := scheduler.New()
@@ -142,11 +156,26 @@ func main() {
 	chatHandler := web.NewChatHandler(articleService, chatService, llmService, tmpl)
 	podcastHandler := web.NewPodcastHandler(podcastService, articleService, tmpl)
 	playlistHandler := web.NewPlaylistHandler(playlistService, articleService, deckService, tmpl)
-	explorerHandler := web.NewExplorerHandler(explorerService, articleService, wikipediaService, tmpl)
 	profileHandler := web.NewProfileHandler(tokenService, tmpl, db)
+	searchHandler := web.NewSearchHandler(searchService, tmpl)
 
 	// API handler
-	apiHandler := api.NewHandler(authService, deckService, cardService, reviewService, articleService, llmService, podcastService, playlistService, sched, authMw, db, explorerService)
+	apiHandler := api.NewHandler(api.Deps{
+		Auth:      authService,
+		Decks:     deckService,
+		Cards:     cardService,
+		Reviews:   reviewService,
+		Articles:  articleService,
+		LLM:       llmService,
+		Podcasts:  podcastService,
+		Playlists: playlistService,
+		Chat:      chatService,
+		Search:    searchService,
+		Tokens:    tokenService,
+		Scheduler: sched,
+		AuthMw:    authMw,
+		DB:        db,
+	})
 
 	// Start cron jobs (disabled in dev mode)
 	c := cron.New()
@@ -206,10 +235,13 @@ func main() {
 	auth.PUT("/decks/:id/study/:cardID", reviewHandler.StudyUpdateCard)
 	auth.DELETE("/decks/:id/study/:cardID", reviewHandler.StudyDeleteCard)
 	auth.POST("/decks/:id/study", reviewHandler.SubmitReview)
+	auth.GET("/search", searchHandler.SearchPage)
+	auth.GET("/search/results", searchHandler.SearchResults)
 	auth.GET("/to-read", articleHandler.ListPage)
 	auth.POST("/to-read", articleHandler.AddArticle)
 	auth.POST("/to-read/:id/delete", articleHandler.DeleteArticle)
 	auth.POST("/to-read/:id/generate", articleHandler.GenerateFlashcards)
+	auth.GET("/to-read/:id/read", articleHandler.ReadArticle)
 	auth.GET("/to-read/:id/images", articleHandler.ArticleImages)
 	auth.GET("/to-read/:id/viewer", articleHandler.ImageViewer)
 	auth.GET("/to-read/:id/chat", chatHandler.ChatPage)
@@ -223,19 +255,6 @@ func main() {
 	auth.POST("/playlists/:id/unlink-article/:articleID", playlistHandler.UnlinkArticle)
 	auth.POST("/playlists/:id/link-deck", playlistHandler.LinkDeck)
 	auth.POST("/playlists/:id/unlink-deck/:deckID", playlistHandler.UnlinkDeck)
-	auth.GET("/explore", explorerHandler.ListGoals)
-	auth.GET("/explore/new", explorerHandler.NewGoalPage)
-	auth.POST("/explore", explorerHandler.CreateGoal)
-	auth.GET("/explore/wiki-search", explorerHandler.WikiSearch)
-	auth.GET("/explore/:id/graph", explorerHandler.GraphJSON)
-	auth.GET("/explore/:id/nodes/:nodeID", explorerHandler.NodePanel)
-	auth.POST("/explore/:id/nodes/:nodeID/queue", explorerHandler.QueueNode)
-	auth.POST("/explore/:id/nodes/:nodeID/unqueue", explorerHandler.UnqueueNode)
-	auth.POST("/explore/:id/nodes/:nodeID/add", explorerHandler.AddToReadList)
-	auth.POST("/explore/:id/expand/:nodeID", explorerHandler.ExpandNode)
-	auth.POST("/explore/:id/auto-schedule", explorerHandler.AutoSchedule)
-	auth.POST("/explore/:id/delete", explorerHandler.DeleteGoal)
-	auth.GET("/explore/:id", explorerHandler.GoalDetail)
 	auth.GET("/podcasts", podcastHandler.ListPage)
 	auth.POST("/podcasts", podcastHandler.CreatePodcast)
 	auth.POST("/podcasts/:id/delete", podcastHandler.DeletePodcast)
@@ -245,48 +264,8 @@ func main() {
 	auth.POST("/profile/tokens/:id/delete", profileHandler.DeleteToken)
 	auth.GET("/stats", reviewHandler.StatsPage)
 
-	// API routes
-	apiG := e.Group("/api/v1")
-	apiG.POST("/auth/register", apiHandler.Register)
-	apiG.POST("/auth/login", apiHandler.Login)
-	apiG.POST("/auth/logout", apiHandler.Logout)
-
-	apiAuth := apiG.Group("", authMw.RequireAuth)
-	apiAuth.GET("/decks", apiHandler.ListDecks)
-	apiAuth.POST("/decks", apiHandler.CreateDeck)
-	apiAuth.GET("/decks/:id", apiHandler.GetDeck)
-	apiAuth.PUT("/decks/:id", apiHandler.UpdateDeck)
-	apiAuth.DELETE("/decks/:id", apiHandler.DeleteDeck)
-	apiAuth.GET("/decks/:id/cards", apiHandler.ListCards)
-	apiAuth.POST("/decks/:id/cards", apiHandler.CreateCard)
-	apiAuth.GET("/cards/:id", apiHandler.GetCard)
-	apiAuth.PUT("/cards/:id", apiHandler.UpdateCard)
-	apiAuth.DELETE("/cards/:id", apiHandler.DeleteCard)
-	apiAuth.GET("/decks/:id/study", apiHandler.GetStudyCard)
-	apiAuth.POST("/decks/:id/study", apiHandler.SubmitStudyReview)
-	apiAuth.POST("/decks/:id/import", apiHandler.ImportCards)
-	apiAuth.GET("/stats", apiHandler.GetStats)
-	apiAuth.GET("/stats/history", apiHandler.GetStatsHistory)
-	// Article API endpoints
-	apiAuth.GET("/articles", apiHandler.ListArticles)
-	apiAuth.POST("/articles", apiHandler.CreateArticle)
-	apiAuth.DELETE("/articles/:id", apiHandler.DeleteArticle)
-	apiAuth.POST("/articles/:id/generate", apiHandler.GenerateArticleCards)
-	apiAuth.GET("/playlists", apiHandler.ListPlaylists)
-	apiAuth.POST("/playlists", apiHandler.CreatePlaylist)
-	apiAuth.GET("/playlists/:id", apiHandler.GetPlaylist)
-	apiAuth.DELETE("/playlists/:id", apiHandler.DeletePlaylist)
-	apiAuth.POST("/playlists/:id/articles", apiHandler.LinkPlaylistArticle)
-	apiAuth.DELETE("/playlists/:id/articles/:articleID", apiHandler.UnlinkPlaylistArticle)
-	apiAuth.POST("/playlists/:id/decks", apiHandler.LinkPlaylistDeck)
-	apiAuth.DELETE("/playlists/:id/decks/:deckID", apiHandler.UnlinkPlaylistDeck)
-	apiAuth.GET("/podcasts/pending", apiHandler.ListPendingPodcasts)
-	apiAuth.PUT("/podcasts/:id/status", apiHandler.UpdatePodcastStatus)
-	// Explorer API endpoints
-	apiAuth.GET("/explore", apiHandler.ListExploreGoals)
-	apiAuth.POST("/explore", apiHandler.CreateExploreGoal)
-	apiAuth.GET("/explore/:id/next", apiHandler.GetNextExploreNode)
-	apiAuth.PATCH("/explore/:id/nodes/:nodeID/complete", apiHandler.CompleteExploreNode)
+	// API routes — the full surface lives in api.RegisterRoutes
+	apiHandler.RegisterRoutes(e.Group("/api/v1"), authMw.RequireAuth)
 
 	log.Printf("Recall starting on :%s", cfg.Port)
 	e.Logger.Fatal(e.Start(fmt.Sprintf(":%s", cfg.Port)))

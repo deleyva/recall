@@ -113,6 +113,63 @@ func (s *CardService) List(deckID string, page, perPage int) ([]models.Card, int
 	return cards, total, nil
 }
 
+// ListForUser returns every card the user owns across all decks, optionally
+// filtered by deck or by the article that generated it, and optionally only
+// those currently due.
+func (s *CardService) ListForUser(userID, deckID, articleID string, dueOnly bool, limit, offset int) ([]models.Card, int, error) {
+	if limit < 1 || limit > 200 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	where := "d.user_id = ?"
+	args := []interface{}{userID}
+	if deckID != "" {
+		where += " AND c.deck_id = ?"
+		args = append(args, deckID)
+	}
+	if articleID != "" {
+		where += " AND c.article_id = ?"
+		args = append(args, articleID)
+	}
+	if dueOnly {
+		where += " AND c.due <= ?"
+		args = append(args, time.Now().UTC().Format(time.RFC3339))
+	}
+
+	var total int
+	if err := s.db.QueryRow(
+		"SELECT COUNT(*) FROM cards c JOIN decks d ON c.deck_id = d.id WHERE "+where, args...,
+	).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count cards: %w", err)
+	}
+
+	rows, err := s.db.Query(`
+		SELECT c.id, c.deck_id, c.front, c.back, c.due, c.stability, c.difficulty, c.elapsed_days,
+			c.scheduled_days, c.reps, c.lapses, c.state, c.last_review, c.created_at, c.updated_at, c.article_id
+		FROM cards c JOIN decks d ON c.deck_id = d.id
+		WHERE `+where+`
+		ORDER BY c.created_at DESC
+		LIMIT ? OFFSET ?
+	`, append(args, limit, offset)...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list user cards: %w", err)
+	}
+	defer rows.Close()
+
+	cards := []models.Card{}
+	for rows.Next() {
+		c, err := scanCard(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		cards = append(cards, *c)
+	}
+	return cards, total, rows.Err()
+}
+
 func (s *CardService) Get(cardID string) (*models.Card, error) {
 	row := s.db.QueryRow(`
 		SELECT id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days,

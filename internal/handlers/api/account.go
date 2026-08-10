@@ -1,0 +1,167 @@
+package api
+
+import (
+	"net/http"
+	"strings"
+
+	"github.com/deleyva/recall/internal/handlers/middleware"
+	"github.com/deleyva/recall/internal/models"
+	"github.com/deleyva/recall/internal/services"
+	"github.com/labstack/echo/v4"
+)
+
+// userSettings is the editable half of a user record. Readeck credentials are
+// write-only: the token goes in, it never comes back out.
+type userSettings struct {
+	DailyCardLimit      int    `json:"daily_card_limit"`
+	PodcastEnabled      bool   `json:"podcast_enabled"`
+	FlashcardGenEnabled bool   `json:"flashcard_gen_enabled"`
+	FlashcardPrompt     string `json:"flashcard_prompt"`
+	ReadeckURL          string `json:"readeck_url"`
+	ReadeckConfigured   bool   `json:"readeck_configured"`
+}
+
+func (h *Handler) GetMe(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+
+	var (
+		email, createdAt, readeckURL, readeckToken, prompt string
+		limit, podcast, gen, isAdmin                       int
+	)
+	err := h.db.QueryRow(`
+		SELECT email, created_at, daily_card_limit, readeck_url, readeck_api_token,
+			podcast_enabled, flashcard_prompt, flashcard_gen_enabled, is_admin
+		FROM users WHERE id = ?`, userID).
+		Scan(&email, &createdAt, &limit, &readeckURL, &readeckToken, &podcast, &prompt, &gen, &isAdmin)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "user not found"})
+	}
+	if prompt == "" {
+		prompt = services.DefaultFlashcardPrompt
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"id":         userID,
+		"email":      email,
+		"is_admin":   isAdmin == 1,
+		"created_at": createdAt,
+		"settings": userSettings{
+			DailyCardLimit:      limit,
+			PodcastEnabled:      podcast == 1,
+			FlashcardGenEnabled: gen == 1,
+			FlashcardPrompt:     prompt,
+			ReadeckURL:          readeckURL,
+			ReadeckConfigured:   readeckToken != "",
+		},
+	})
+}
+
+func (h *Handler) UpdateMySettings(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+
+	// Pointers so "absent" and "set to zero/false" stay distinguishable.
+	var req struct {
+		DailyCardLimit      *int    `json:"daily_card_limit"`
+		PodcastEnabled      *bool   `json:"podcast_enabled"`
+		FlashcardGenEnabled *bool   `json:"flashcard_gen_enabled"`
+		FlashcardPrompt     *string `json:"flashcard_prompt"`
+		ReadeckURL          *string `json:"readeck_url"`
+		ReadeckAPIToken     *string `json:"readeck_api_token"`
+	}
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
+	}
+
+	sets := []string{}
+	args := []interface{}{}
+
+	if req.DailyCardLimit != nil {
+		if *req.DailyCardLimit < 1 || *req.DailyCardLimit > 20 {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "daily_card_limit must be 1-20"})
+		}
+		sets = append(sets, "daily_card_limit = ?")
+		args = append(args, *req.DailyCardLimit)
+	}
+	if req.PodcastEnabled != nil {
+		sets = append(sets, "podcast_enabled = ?")
+		args = append(args, boolToInt(*req.PodcastEnabled))
+	}
+	if req.FlashcardGenEnabled != nil {
+		sets = append(sets, "flashcard_gen_enabled = ?")
+		args = append(args, boolToInt(*req.FlashcardGenEnabled))
+	}
+	if req.FlashcardPrompt != nil {
+		prompt := strings.TrimSpace(*req.FlashcardPrompt)
+		if prompt == services.DefaultFlashcardPrompt {
+			prompt = "" // empty means "use the system default"
+		}
+		sets = append(sets, "flashcard_prompt = ?")
+		args = append(args, prompt)
+	}
+	if req.ReadeckURL != nil {
+		sets = append(sets, "readeck_url = ?")
+		args = append(args, strings.TrimSpace(*req.ReadeckURL))
+	}
+	if req.ReadeckAPIToken != nil {
+		sets = append(sets, "readeck_api_token = ?")
+		args = append(args, strings.TrimSpace(*req.ReadeckAPIToken))
+	}
+
+	if len(sets) == 0 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "no settings provided"})
+	}
+
+	args = append(args, userID)
+	if _, err := h.db.Exec("UPDATE users SET "+strings.Join(sets, ", ")+" WHERE id = ?", args...); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return h.GetMe(c)
+}
+
+func (h *Handler) ListTokens(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	tokens, err := h.tokens.List(userID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	if tokens == nil {
+		tokens = []models.APIToken{}
+	}
+	return c.JSON(http.StatusOK, tokens)
+}
+
+// CreateToken returns the raw token exactly once — it is hashed at rest.
+func (h *Handler) CreateToken(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	var req struct {
+		Name string `json:"name"`
+	}
+	c.Bind(&req)
+	if strings.TrimSpace(req.Name) == "" {
+		req.Name = "API Token"
+	}
+
+	raw, token, err := h.tokens.Create(userID, req.Name)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusCreated, map[string]interface{}{
+		"token": raw,
+		"meta":  token,
+	})
+}
+
+func (h *Handler) DeleteToken(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	if err := h.tokens.Delete(userID, c.Param("id")); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "token not found"})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"message": "deleted"})
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}

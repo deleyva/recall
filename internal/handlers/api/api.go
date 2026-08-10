@@ -13,6 +13,26 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// Deps carries every service the API needs. A struct rather than a positional
+// argument list — the constructor had grown long enough that arg order was a
+// hazard, and new subsystems get added here without touching call sites.
+type Deps struct {
+	Auth      *services.AuthService
+	Decks     *services.DeckService
+	Cards     *services.CardService
+	Reviews   *services.ReviewService
+	Articles  *services.ArticleService
+	LLM       *services.LLMService
+	Podcasts  *services.PodcastService
+	Playlists *services.PlaylistService
+	Chat      *services.ChatService
+	Search    *services.SearchService
+	Tokens    *services.TokenService
+	Scheduler *scheduler.Scheduler
+	AuthMw    *middleware.AuthMiddleware
+	DB        *sql.DB
+}
+
 type Handler struct {
 	auth      *services.AuthService
 	decks     *services.DeckService
@@ -22,26 +42,30 @@ type Handler struct {
 	llm       *services.LLMService
 	podcasts  *services.PodcastService
 	playlists *services.PlaylistService
+	chat      *services.ChatService
+	search    *services.SearchService
+	tokens    *services.TokenService
 	scheduler *scheduler.Scheduler
 	authMw    *middleware.AuthMiddleware
-	explorer  *services.ExplorerService
 	db        *sql.DB
 }
 
-func NewHandler(auth *services.AuthService, decks *services.DeckService, cards *services.CardService, reviews *services.ReviewService, articles *services.ArticleService, llm *services.LLMService, podcasts *services.PodcastService, playlists *services.PlaylistService, sched *scheduler.Scheduler, authMw *middleware.AuthMiddleware, db *sql.DB, explorer *services.ExplorerService) *Handler {
+func NewHandler(d Deps) *Handler {
 	return &Handler{
-		auth:      auth,
-		decks:     decks,
-		cards:     cards,
-		reviews:   reviews,
-		articles:  articles,
-		llm:       llm,
-		podcasts:  podcasts,
-		playlists: playlists,
-		scheduler: sched,
-		authMw:    authMw,
-		explorer:  explorer,
-		db:        db,
+		auth:      d.Auth,
+		decks:     d.Decks,
+		cards:     d.Cards,
+		reviews:   d.Reviews,
+		articles:  d.Articles,
+		llm:       d.LLM,
+		podcasts:  d.Podcasts,
+		playlists: d.Playlists,
+		chat:      d.Chat,
+		search:    d.Search,
+		tokens:    d.Tokens,
+		scheduler: d.Scheduler,
+		authMw:    d.AuthMw,
+		db:        d.DB,
 	}
 }
 
@@ -604,79 +628,6 @@ func (h *Handler) UpdatePodcastStatus(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"message": "updated"})
 }
 
-// Explorer API endpoints
 
-func (h *Handler) ListExploreGoals(c echo.Context) error {
-	userID := middleware.GetUserID(c)
-	goals, err := h.explorer.ListGoals(userID)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-	}
-	if goals == nil {
-		goals = []models.LearningGoal{}
-	}
-	return c.JSON(http.StatusOK, goals)
-}
 
-func (h *Handler) CreateExploreGoal(c echo.Context) error {
-	userID := middleware.GetUserID(c)
-	var req struct {
-		Title       string               `json:"title"`
-		TimeHorizon int                  `json:"time_horizon"`
-		Items       []services.GoalItem  `json:"items"`
-	}
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
-	}
-	if req.Title == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "title required"})
-	}
-	if req.TimeHorizon <= 0 {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "time_horizon must be positive"})
-	}
-	if len(req.Items) == 0 {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "at least one item required"})
-	}
 
-	goal, err := h.explorer.CreateGoalWithItems(userID, req.Title, req.TimeHorizon, req.Items)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-	}
-	return c.JSON(http.StatusCreated, goal)
-}
-
-func (h *Handler) GetNextExploreNode(c echo.Context) error {
-	userID := middleware.GetUserID(c)
-	goalID := c.Param("id")
-
-	node, err := h.explorer.GetNextQueuedNode(goalID, userID)
-	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
-	}
-	if node == nil {
-		return c.NoContent(http.StatusNoContent)
-	}
-	return c.JSON(http.StatusOK, node)
-}
-
-func (h *Handler) CompleteExploreNode(c echo.Context) error {
-	userID := middleware.GetUserID(c)
-	goalID := c.Param("id")
-	nodeID := c.Param("nodeID")
-
-	var req struct {
-		ArticleID string `json:"article_id"`
-	}
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
-	}
-	if req.ArticleID == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "article_id required"})
-	}
-
-	node, err := h.explorer.CompleteNode(goalID, nodeID, req.ArticleID, userID)
-	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": err.Error()})
-	}
-	return c.JSON(http.StatusOK, node)
-}

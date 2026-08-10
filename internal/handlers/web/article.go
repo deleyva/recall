@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/deleyva/recall/internal/handlers/middleware"
 	"github.com/deleyva/recall/internal/services"
@@ -155,6 +156,50 @@ func (h *ArticleHandler) GenerateFlashcards(c echo.Context) error {
 	}
 
 	return c.Redirect(http.StatusSeeOther, fmt.Sprintf("/to-read?success=Generated+%d+flashcards", created))
+}
+
+// ReadArticle renders the text Recall stored for an article, so a saved article
+// can be re-read here even when the original URL is gone. `?q=` highlights the
+// search terms that led here.
+func (h *ArticleHandler) ReadArticle(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	articleID := c.Param("id")
+
+	article, err := h.articles.Get(userID, articleID)
+	if err != nil {
+		return c.Redirect(http.StatusSeeOther, "/to-read?error=Article+not+found")
+	}
+
+	query := c.QueryParam("q")
+	terms := services.Tokens(query)
+
+	// Stored text can carry HTML fragments — Readeck sends plain text, but our
+	// own extractor leaks the odd tag from noscript blocks. Strip before
+	// rendering so the reader never shows literal markup.
+	paragraphs := services.SplitParagraphs(services.StripHTML(article.Content))
+	rendered := make([]string, 0, len(paragraphs))
+	words := 0
+	for _, p := range paragraphs {
+		words += len(strings.Fields(p))
+		rendered = append(rendered, services.Highlight(p, terms))
+	}
+
+	minutes := words / 200
+	if minutes < 1 && words > 0 {
+		minutes = 1
+	}
+
+	return h.tmpl.ExecuteTemplate(c.Response(), "article_read.html", map[string]interface{}{
+		"Article":        article,
+		"Paragraphs":     rendered,
+		"Query":          query,
+		"WordCount":      words,
+		"ReadingMinutes": minutes,
+		"Empty":          len(rendered) == 0,
+		"LLMEnabled":     h.llm.IsConfigured(),
+		"Email":          c.Get(middleware.EmailKey),
+		"IsAdmin":        middleware.IsAdmin(c),
+	})
 }
 
 func (h *ArticleHandler) ArticleImages(c echo.Context) error {

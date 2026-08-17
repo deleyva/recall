@@ -118,7 +118,7 @@ func main() {
 	cardService := services.NewCardService(db)
 	reviewService := services.NewReviewService(db)
 	articleService := services.NewArticleService(db)
-	llmService := services.NewLLMService(cfg.LLMAPIKey)
+	llmService := services.NewLLMService(cfg.LLMAPIKey, cfg.LLMAPIURL, cfg.LLMModel, db)
 	tokenService := services.NewTokenService(db)
 	wikipediaService := services.NewWikipediaService()
 	chatService := services.NewChatService(db)
@@ -156,7 +156,7 @@ func main() {
 	chatHandler := web.NewChatHandler(articleService, chatService, llmService, tmpl)
 	podcastHandler := web.NewPodcastHandler(podcastService, articleService, tmpl)
 	playlistHandler := web.NewPlaylistHandler(playlistService, articleService, deckService, tmpl)
-	profileHandler := web.NewProfileHandler(tokenService, tmpl, db)
+	profileHandler := web.NewProfileHandler(tokenService, llmService, tmpl, db)
 	searchHandler := web.NewSearchHandler(searchService, tmpl)
 
 	// API handler

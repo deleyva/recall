@@ -205,7 +205,7 @@ func (h *Handler) SendChat(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
-	answer, err := h.llm.ChatWithArticle(article.Content, history, req.Message)
+	answer, err := h.llm.ChatWithArticle(article.Content, history, req.Message, userID)
 	if err != nil {
 		log.Printf("api chat error for article %s: %v", articleID, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "llm request failed"})

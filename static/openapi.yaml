@@ -80,6 +80,12 @@ components:
         readeck_configured:
           type: boolean
           description: True when a Readeck API token is stored. The token itself is never returned.
+        llm_model:
+          type: string
+          description: Per-user model override. Empty means the instance default (LLM_MODEL) applies.
+        llm_model_effective:
+          type: string
+          description: The model a generation or chat call would actually use right now, after applying the precedence chain.
 
     APIToken:
       type: object
@@ -368,6 +374,9 @@ paths:
                 flashcard_prompt: { type: string }
                 readeck_url: { type: string }
                 readeck_api_token: { type: string }
+                llm_model:
+                  type: string
+                  description: Set to change the model without redeploying. Empty string restores the instance default.
       responses:
         "200":
           description: Updated user

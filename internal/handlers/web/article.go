@@ -120,7 +120,7 @@ func (h *ArticleHandler) GenerateFlashcards(c echo.Context) error {
 	h.db.QueryRow("SELECT flashcard_prompt FROM users WHERE id = ?", userID).Scan(&customPrompt)
 
 	// Generate flashcards
-	pairs, err := h.llm.GenerateFlashcards(article.Content, existing, count, customPrompt)
+	pairs, err := h.llm.GenerateFlashcards(article.Content, existing, count, customPrompt, userID)
 	if err != nil {
 		if c.Request().Header.Get("HX-Request") == "true" {
 			return c.String(http.StatusInternalServerError, fmt.Sprintf("Generation failed: %s", err.Error()))

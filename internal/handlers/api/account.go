@@ -19,20 +19,25 @@ type userSettings struct {
 	FlashcardPrompt     string `json:"flashcard_prompt"`
 	ReadeckURL          string `json:"readeck_url"`
 	ReadeckConfigured   bool   `json:"readeck_configured"`
+	// LLMModel is this user's override, empty when they follow the instance
+	// default. LLMModelEffective is what a call would actually use right now —
+	// the two differ precisely when the override is empty.
+	LLMModel          string `json:"llm_model"`
+	LLMModelEffective string `json:"llm_model_effective"`
 }
 
 func (h *Handler) GetMe(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 
 	var (
-		email, createdAt, readeckURL, readeckToken, prompt string
-		limit, podcast, gen, isAdmin                       int
+		email, createdAt, readeckURL, readeckToken, prompt, llmModel string
+		limit, podcast, gen, isAdmin                                 int
 	)
 	err := h.db.QueryRow(`
 		SELECT email, created_at, daily_card_limit, readeck_url, readeck_api_token,
-			podcast_enabled, flashcard_prompt, flashcard_gen_enabled, is_admin
+			podcast_enabled, flashcard_prompt, flashcard_gen_enabled, is_admin, llm_model
 		FROM users WHERE id = ?`, userID).
-		Scan(&email, &createdAt, &limit, &readeckURL, &readeckToken, &podcast, &prompt, &gen, &isAdmin)
+		Scan(&email, &createdAt, &limit, &readeckURL, &readeckToken, &podcast, &prompt, &gen, &isAdmin, &llmModel)
 	if err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "user not found"})
 	}
@@ -52,6 +57,8 @@ func (h *Handler) GetMe(c echo.Context) error {
 			FlashcardPrompt:     prompt,
 			ReadeckURL:          readeckURL,
 			ReadeckConfigured:   readeckToken != "",
+			LLMModel:            llmModel,
+			LLMModelEffective:   h.llm.ResolveModel(userID),
 		},
 	})
 }
@@ -67,6 +74,7 @@ func (h *Handler) UpdateMySettings(c echo.Context) error {
 		FlashcardPrompt     *string `json:"flashcard_prompt"`
 		ReadeckURL          *string `json:"readeck_url"`
 		ReadeckAPIToken     *string `json:"readeck_api_token"`
+		LLMModel            *string `json:"llm_model"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
@@ -105,6 +113,11 @@ func (h *Handler) UpdateMySettings(c echo.Context) error {
 	if req.ReadeckAPIToken != nil {
 		sets = append(sets, "readeck_api_token = ?")
 		args = append(args, strings.TrimSpace(*req.ReadeckAPIToken))
+	}
+	if req.LLMModel != nil {
+		// Empty is meaningful: it hands the choice back to the instance default.
+		sets = append(sets, "llm_model = ?")
+		args = append(args, strings.TrimSpace(*req.LLMModel))
 	}
 
 	if len(sets) == 0 {

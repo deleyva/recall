@@ -472,7 +472,7 @@ func (h *Handler) GenerateArticleCards(c echo.Context) error {
 	var customPrompt string
 	h.db.QueryRow("SELECT flashcard_prompt FROM users WHERE id = ?", userID).Scan(&customPrompt)
 
-	pairs, err := h.llm.GenerateFlashcards(article.Content, existing, req.Count, customPrompt)
+	pairs, err := h.llm.GenerateFlashcards(article.Content, existing, req.Count, customPrompt, userID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}

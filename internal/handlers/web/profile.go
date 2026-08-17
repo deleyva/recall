@@ -15,12 +15,13 @@ import (
 
 type ProfileHandler struct {
 	tokens *services.TokenService
+	llm    *services.LLMService
 	tmpl   *templates.Registry
 	db     *sql.DB
 }
 
-func NewProfileHandler(tokens *services.TokenService, tmpl *templates.Registry, db *sql.DB) *ProfileHandler {
-	return &ProfileHandler{tokens: tokens, tmpl: tmpl, db: db}
+func NewProfileHandler(tokens *services.TokenService, llm *services.LLMService, tmpl *templates.Registry, db *sql.DB) *ProfileHandler {
+	return &ProfileHandler{tokens: tokens, llm: llm, tmpl: tmpl, db: db}
 }
 
 func (h *ProfileHandler) ProfilePage(c echo.Context) error {
@@ -28,9 +29,9 @@ func (h *ProfileHandler) ProfilePage(c echo.Context) error {
 	tokens, _ := h.tokens.List(userID)
 
 	var dailyCardLimit int
-	var readeckURL, readeckToken, flashcardPrompt string
+	var readeckURL, readeckToken, flashcardPrompt, llmModel string
 	var podcastEnabled, flashcardGenEnabled int
-	h.db.QueryRow("SELECT daily_card_limit, readeck_url, readeck_api_token, podcast_enabled, flashcard_prompt, flashcard_gen_enabled FROM users WHERE id = ?", userID).Scan(&dailyCardLimit, &readeckURL, &readeckToken, &podcastEnabled, &flashcardPrompt, &flashcardGenEnabled)
+	h.db.QueryRow("SELECT daily_card_limit, readeck_url, readeck_api_token, podcast_enabled, flashcard_prompt, flashcard_gen_enabled, llm_model FROM users WHERE id = ?", userID).Scan(&dailyCardLimit, &readeckURL, &readeckToken, &podcastEnabled, &flashcardPrompt, &flashcardGenEnabled, &llmModel)
 	if dailyCardLimit == 0 {
 		dailyCardLimit = 5
 	}
@@ -55,6 +56,8 @@ func (h *ProfileHandler) ProfilePage(c echo.Context) error {
 		"FlashcardGenEnabled": flashcardGenEnabled == 1,
 		"FlashcardPrompt":     displayPrompt,
 		"IsDefaultPrompt":     flashcardPrompt == "",
+		"LLMModel":            llmModel,
+		"LLMModelEffective":   h.llm.ResolveModel(userID),
 	})
 }
 
@@ -69,6 +72,7 @@ func (h *ProfileHandler) UpdateSettings(c echo.Context) error {
 	readeckURL := strings.TrimSpace(c.FormValue("readeck_url"))
 	readeckToken := strings.TrimSpace(c.FormValue("readeck_api_token"))
 	flashcardPrompt := strings.TrimSpace(c.FormValue("flashcard_prompt"))
+	llmModel := strings.TrimSpace(c.FormValue("llm_model"))
 
 	// If the user submitted the default prompt unchanged, store empty (= use system default)
 	if flashcardPrompt == services.DefaultFlashcardPrompt {
@@ -86,8 +90,8 @@ func (h *ProfileHandler) UpdateSettings(c echo.Context) error {
 	}
 
 	_, err = h.db.Exec(
-		"UPDATE users SET daily_card_limit = ?, readeck_url = ?, readeck_api_token = ?, podcast_enabled = ?, flashcard_prompt = ?, flashcard_gen_enabled = ? WHERE id = ?",
-		limit, readeckURL, readeckToken, podcastEnabled, flashcardPrompt, flashcardGenEnabled, userID,
+		"UPDATE users SET daily_card_limit = ?, readeck_url = ?, readeck_api_token = ?, podcast_enabled = ?, flashcard_prompt = ?, flashcard_gen_enabled = ?, llm_model = ? WHERE id = ?",
+		limit, readeckURL, readeckToken, podcastEnabled, flashcardPrompt, flashcardGenEnabled, llmModel, userID,
 	)
 	if err != nil {
 		return c.Redirect(http.StatusSeeOther, "/profile?error="+fmt.Sprintf("Failed+to+save:+%v", err))

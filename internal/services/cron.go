@@ -114,7 +114,7 @@ func (s *CronService) generateForUser(userID string) {
 		existing, _ := s.articles.GetCardsForArticle(article.ID)
 
 		// Generate flashcards
-		pairs, err := s.llm.GenerateFlashcards(full.Content, existing, remaining, customPrompt)
+		pairs, err := s.llm.GenerateFlashcards(full.Content, existing, remaining, customPrompt, userID)
 		if err != nil {
 			log.Printf("[cron] Failed to generate for article %s: %v", article.ID, err)
 			continue

@@ -1,18 +1,20 @@
 ---
-task: "Recall full-text search, article reader, complete REST API"
-slug: 20260809-193403_recall-search-reader-api
+task: "Recall runtime-configurable LLM model + flashcard backfill"
+slug: 20260817-193000_recall-llm-model-runtime-config
 project: recall
 effort: E3
 effort_source: auto
-phase: complete
-progress: 26/28
+phase: build
+progress: 26/42
+iteration: 2
 mode: interactive
-started: 2026-08-09T17:34:03Z
-updated: 2026-08-09T21:05:00Z
-principal_stated_goal: "Quiero que en la app Recall pongas un campo de búsqueda que pueda buscar en el texto de todos los artículos guardados, generados, todo el texto que guardas, pero no está visible."
+started: 2026-08-17T19:25:00Z
+updated: 2026-08-17T19:32:00Z
+principal_stated_goal: "ok! arregla recall, despliega y genera las flashcards. arreglarlo de manera que un nuevo cambio de modelo en el futuro no suponga todo un despliegue de nuevo."
 principal_stated_goal_source: prompt
 principal_stated_goal_signal: 2
-principal_stated_goal_locked: 2026-08-09T17:34:03Z
+principal_stated_goal_locked: 2026-08-17T19:25:00Z
+prior_run: "20260809-193403_recall-search-reader-api — ISC-1…ISC-25, Anti-1…Anti-3 (complete)"
 context_sufficient: true
 interview_invoked: false
 ---
@@ -100,6 +102,25 @@ Semantic or vector search, embeddings, and any external search service — this 
 - [x] Anti-2: The existing study flow, flashcard generation, chat, Readeck sync, and podcast cron paths still work after the change — no regression in `go build ./...`, `go vet ./...`, and the existing web routes.
 - [x] Anti-3: No cgo and no external search service — `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build` still produces the deploy binary.
 
+**Runtime-configurable LLM model** *(run 2 — 2026-08-17; goal: "arregla recall, despliega y genera las flashcards. arreglarlo de manera que un nuevo cambio de modelo en el futuro no suponga todo un despliegue de nuevo.")*
+
+- [ ] ISC-26: Migration `014_llm_model.sql` applies cleanly via `goose up` on a copy of `recall.db` and adds `users.llm_model TEXT NOT NULL DEFAULT ''`; re-running `goose up` is a no-op.
+- [ ] ISC-27: Model resolution honours a strict precedence — non-empty `users.llm_model` beats `LLM_MODEL` env, which beats the compiled fallback. A table test covering all eight combinations of (column set/empty, env set/empty, fallback) returns the expected model for every row.
+- [ ] ISC-28: `LLM_API_URL` env overrides the compiled Groq endpoint; unset, the compiled endpoint is used. Neither path requires a code change.
+- [ ] ISC-29: `GET /profile` renders an input named `llm_model` carrying the stored value; `POST /profile` with a new value persists it; a subsequent `GET /profile` shows the new value.
+- [ ] ISC-30: `GET /api/v1/account` includes an `llm_model` key; `PATCH /api/v1/account` with `{"llm_model":"X"}` returns 200 and a re-GET reports `X`.
+- [ ] ISC-31: The stored model survives `docker compose restart` — the value read after restart equals the value written before it (it lives in the DB volume, not process memory).
+- [ ] ISC-32: `POST` flashcard generation for article `8bcaecbbb8dd861eaafd4664c4db50c2` returns HTTP 200 and creates ≥3 cards whose front and back are in Spanish (the article's language).
+- [ ] ISC-33: The same call for article `b660195880de77a909ffeea1791f110c` returns 200 and creates ≥3 Spanish cards.
+- [ ] ISC-34: The chat path resolves its model through the same layered resolver as generation — no call site names a model literal. `rg 'Model:\s*"' internal/` returns zero hits outside the resolver.
+- [ ] ISC-35: The deployed instance serves the new code — a live probe against `RECALL_URL` shows generation succeeding where it returned the 404 model error before.
+
+**Anti-criteria (run 2)**
+
+- [ ] Anti-4: The LLM API key is never returned by the account API and never written to logs — `GET /api/v1/account` contains no key material, and `rg -i 'apiKey|LLM_API_KEY' internal/` shows no log statement carrying its value.
+- [ ] Anti-5: Changing the model does not require rebuilding the image. After deploy, changing `llm_model` through the API alone changes the model the next generation call actually uses, with no `docker compose build` and no container recreation in between.
+- [ ] Anti-6: No regression in the existing surface — `go build ./...`, `go vet ./...`, and `go test ./...` all pass, and the three pre-existing generation call sites still compile and run.
+
 ## Test Strategy
 
 | isc | type | check | threshold | tool | anchors_to |
@@ -128,6 +149,19 @@ Semantic or vector search, embeddings, and any external search service — this 
 | Anti-1 | http | `curl /api/v1/articles`, inspect payload | no `content` key | curl -i | Out of Scope |
 | Anti-2 | build+web | `go build ./...`, `go vet ./...`, exercise study + generate in browser | pass, flows work | go + Interceptor | Principles |
 | Anti-3 | build | `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build` | binary produced | bash | Constraints |
+| ISC-26 | schema | `goose up` on a copy of recall.db, then `PRAGMA table_info(users)`; run twice | column present, second run no-op | bash + sqlite3 | principal_stated_goal |
+| ISC-27 | unit | Go table test over all (column, env, fallback) combinations | expected model per row | go test | principal_stated_goal |
+| ISC-28 | unit | Go test: set/unset `LLM_API_URL`, read resolved endpoint | override wins, else compiled | go test | principal_stated_goal |
+| ISC-29 | web/UI | Interceptor: load `/profile`, edit the field, save, reload | new value rendered after reload | Interceptor | principal_stated_goal |
+| ISC-30 | http | `curl -i` GET, PATCH, GET against `/api/v1/account` | key present; PATCH 200; value echoed | curl -i | principal_stated_goal |
+| ISC-31 | http | write value, `docker compose restart`, GET again | value unchanged | curl -i + ssh | principal_stated_goal |
+| ISC-32 | http | `curl -i` generate for the XLR article, then read the cards | 200, ≥3 cards, Spanish text | curl -i | principal_stated_goal |
+| ISC-33 | http | same for the mise en place article | 200, ≥3 cards, Spanish text | curl -i | principal_stated_goal |
+| ISC-34 | code | `rg 'Model:\s*"' internal/` | zero hits outside resolver | Grep | Principles |
+| ISC-35 | deploy | live probe against RECALL_URL after deploy | generation returns 200 | curl -i | principal_stated_goal |
+| Anti-4 | http+code | inspect account payload; grep for key logging | no key material either place | curl -i + Grep | Constraints |
+| Anti-5 | deploy | change model via API only, regenerate, compare container id before/after | model changed, container id identical | curl -i + ssh | principal_stated_goal |
+| Anti-6 | build | `go build ./...`, `go vet ./...`, `go test ./...` | all pass | bash | Principles |
 
 ## Features
 
@@ -138,6 +172,10 @@ Semantic or vector search, embeddings, and any external search service — this 
 | reader | `/to-read/:id/read` reader view, per-row Read control, paragraph splitter, query highlighting | ISC-15…ISC-19 | — | yes (with search-ui) |
 | api-surface | Article content endpoints, search endpoint, chat/podcast/profile/token endpoints, `recall routes` command, rewritten `static/openapi.yaml`, spec-vs-router test | ISC-20…ISC-25, Anti-1 | search-index | no |
 | verify | Browser verification pass through Interceptor + build/vet/test sweep | ISC-11…ISC-19, Anti-2, Anti-3 | all | no |
+| model-resolver | Migration 014 (`users.llm_model`), `LLM_MODEL`/`LLM_API_URL` in config, layered resolver in `LLMService`, model threaded to generation and chat call sites, unit tests | ISC-26…ISC-28, ISC-34, Anti-6 | — | no |
+| model-settings-ui | `llm_model` field on `/profile` (GET render + POST persist) and in the account REST API (GET + PATCH) | ISC-29, ISC-30, Anti-4 | model-resolver | no |
+| model-deploy | Push to origin, rebuild and restart the NAS stack, set the working model, prove persistence across restart | ISC-31, ISC-35, Anti-5 | model-settings-ui | no |
+| flashcard-backfill | Generate the two pending Spanish flashcard sets against the live deployment | ISC-32, ISC-33 | model-deploy | no |
 
 ## Decisions
 
@@ -149,6 +187,10 @@ Semantic or vector search, embeddings, and any external search service — this 
 
 - 2026-08-09 22:55: Reader renders `StripHTML(content)` rather than the raw stored text. Our own extractor leaks tags from `<noscript>` blocks (visible in the Wikipedia articles), and escaping them faithfully meant showing literal `<link rel=…>` markup to the reader.
 - 2026-08-09 23:05: Mobile verification deferred rather than claimed. `resize_window` reported success twice but the capture stayed 1568px wide, and an appearance claim closes only on pixels actually seen — so ISC-13's mobile half and ISC-19 stay open with `[DEFERRED-VERIFY]` instead of being waved through on markup inspection.
+
+- 2026-08-17 21:30: Three layers rather than one. An `LLM_MODEL` env var alone would technically satisfy "no redeploy" — the image never rebuilds, only `docker compose up -d` re-reads it — but it still costs an SSH session and a container recreation for what is a one-word change. A `users.llm_model` column edited from `/profile` makes the ordinary case a text field in a browser, and it reuses the exact pattern `flashcard_prompt` (migration 008) already established, so there is no new concept in the codebase. Env stays as the instance default for a fresh deploy; the compiled constant survives only as the last-resort fallback.
+- 2026-08-17 21:30: `LLM_API_URL` made configurable alongside the model, though nothing asked for it. The failure being fixed is "the provider changed something under us"; a retired *endpoint* or a move to another OpenAI-compatible provider is the same class of failure as a retired model, and the fix is one more `getEnv` line. Class-sweep, not scope creep.
+- 2026-08-17 21:30: Default model set to `openai/gpt-oss-120b`, read from Groq's live model list this session. The Llama 3.3 family is gone from production entirely, so this is a family change and not a version bump — worth recording, because the next break will look the same and the answer will be to change a text field rather than to read this file.
 
 ## Changelog
 

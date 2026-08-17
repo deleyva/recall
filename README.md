@@ -54,7 +54,26 @@ go build -o recall ./cmd/recall/
 | `RECALL_PORT` | `8080` | HTTP port |
 | `RECALL_DB_PATH` | `recall.db` | SQLite database file path |
 | `RECALL_SESSION_KEY` | (insecure default) | 32+ char secret for session cookies |
-| `GEMINI_API_KEY` | — | Google Gemini API key (enables AI chat + flashcard generation) |
+| `LLM_API_KEY` | — | API key for the LLM provider (enables AI chat + flashcard generation) |
+| `LLM_MODEL` | `openai/gpt-oss-120b` | Instance-wide default model |
+| `LLM_API_URL` | Groq chat-completions | Any OpenAI-compatible chat-completions endpoint |
+
+### Changing the model
+
+Providers retire models. When that happens every generation call starts failing
+with a 404, and the fix should never be a rebuild. The model is resolved per
+call, most specific first:
+
+1. **The user's own setting** — the *AI Model* field on `/profile`, or
+   `PATCH /api/v1/account` with `{"llm_model": "..."}`. Takes effect on the next
+   request; nothing to restart.
+2. **`LLM_MODEL`** — the instance default, for a fresh deploy or to move every
+   user at once. Needs a container restart, not a rebuild.
+3. **A compiled fallback** — last resort only.
+
+Leave the profile field empty to follow the instance default. `GET /api/v1/account`
+reports both `llm_model` (your override) and `llm_model_effective` (what a call
+would actually use right now).
 
 ## Usage
 

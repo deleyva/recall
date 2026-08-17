@@ -82,7 +82,7 @@ func (h *ChatHandler) SendMessage(c echo.Context) error {
 	}
 
 	// Get AI response
-	response, err := h.llm.ChatWithArticle(article.Content, history, question)
+	response, err := h.llm.ChatWithArticle(article.Content, history, question, userID)
 	if err != nil {
 		log.Printf("LLM chat error for article %s: %v", articleID, err)
 		return c.String(http.StatusInternalServerError, "Could not get AI response. Please try again.")

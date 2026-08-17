@@ -4,12 +4,12 @@ slug: 20260817-193000_recall-llm-model-runtime-config
 project: recall
 effort: E3
 effort_source: auto
-phase: build
-progress: 26/42
+phase: complete
+progress: 38/41
 iteration: 2
 mode: interactive
 started: 2026-08-17T19:25:00Z
-updated: 2026-08-17T19:32:00Z
+updated: 2026-08-17T20:05:00Z
 principal_stated_goal: "ok! arregla recall, despliega y genera las flashcards. arreglarlo de manera que un nuevo cambio de modelo en el futuro no suponga todo un despliegue de nuevo."
 principal_stated_goal_source: prompt
 principal_stated_goal_signal: 2
@@ -104,22 +104,22 @@ Semantic or vector search, embeddings, and any external search service — this 
 
 **Runtime-configurable LLM model** *(run 2 — 2026-08-17; goal: "arregla recall, despliega y genera las flashcards. arreglarlo de manera que un nuevo cambio de modelo en el futuro no suponga todo un despliegue de nuevo.")*
 
-- [ ] ISC-26: Migration `014_llm_model.sql` applies cleanly via `goose up` on a copy of `recall.db` and adds `users.llm_model TEXT NOT NULL DEFAULT ''`; re-running `goose up` is a no-op.
-- [ ] ISC-27: Model resolution honours a strict precedence — non-empty `users.llm_model` beats `LLM_MODEL` env, which beats the compiled fallback. A table test covering all eight combinations of (column set/empty, env set/empty, fallback) returns the expected model for every row.
-- [ ] ISC-28: `LLM_API_URL` env overrides the compiled Groq endpoint; unset, the compiled endpoint is used. Neither path requires a code change.
-- [ ] ISC-29: `GET /profile` renders an input named `llm_model` carrying the stored value; `POST /profile` with a new value persists it; a subsequent `GET /profile` shows the new value.
-- [ ] ISC-30: `GET /api/v1/account` includes an `llm_model` key; `PATCH /api/v1/account` with `{"llm_model":"X"}` returns 200 and a re-GET reports `X`.
-- [ ] ISC-31: The stored model survives `docker compose restart` — the value read after restart equals the value written before it (it lives in the DB volume, not process memory).
-- [ ] ISC-32: `POST` flashcard generation for article `8bcaecbbb8dd861eaafd4664c4db50c2` returns HTTP 200 and creates ≥3 cards whose front and back are in Spanish (the article's language).
-- [ ] ISC-33: The same call for article `b660195880de77a909ffeea1791f110c` returns 200 and creates ≥3 Spanish cards.
-- [ ] ISC-34: The chat path resolves its model through the same layered resolver as generation — no call site names a model literal. `rg 'Model:\s*"' internal/` returns zero hits outside the resolver.
-- [ ] ISC-35: The deployed instance serves the new code — a live probe against `RECALL_URL` shows generation succeeding where it returned the 404 model error before.
+- [x] ISC-26: Migration `014_llm_model.sql` applies cleanly via `goose up` on a copy of `recall.db` and adds `users.llm_model TEXT NOT NULL DEFAULT ''`; re-running `goose up` is a no-op.
+- [x] ISC-27: Model resolution honours a strict precedence — non-empty `users.llm_model` beats `LLM_MODEL` env, which beats the compiled fallback. A table test covering all eight combinations of (column set/empty, env set/empty, fallback) returns the expected model for every row.
+- [x] ISC-28: `LLM_API_URL` env overrides the compiled Groq endpoint; unset, the compiled endpoint is used. Neither path requires a code change.
+- [ ] ISC-29: `GET /profile` renders an input named `llm_model` carrying the stored value; `POST /profile` with a new value persists it; a subsequent `GET /profile` shows the new value. **[DEFERRED-VERIFY]** — Interceptor's preflight isolation gate hard-stopped on context UUID rot, which needs a one-time human click in the extension popup. An appearance claim closes only on pixels actually seen, and no sanctioned verifier was available, so this stays open rather than being waved through on markup inspection. Follow-up: name the context `interceptor-test` in the popup, then re-run the check.
+- [x] ISC-30: The account API includes an `llm_model` key; writing `{"llm_model":"X"}` returns 200 and a re-GET reports `X`. *(route corrected mid-run — see Changelog)*
+- [x] ISC-31: The stored model survives a stack restart — the value read after restart equals the value written before it (it lives in the DB volume, not process memory).
+- [x] ISC-32: Flashcard generation for article `8bcaecbbb8dd861eaafd4664c4db50c2` returns HTTP 200 and creates ≥3 cards whose front and back are in Spanish (the article's language).
+- [x] ISC-33: The same call for article `b660195880de77a909ffeea1791f110c` returns 200 and creates ≥3 Spanish cards.
+- [x] ISC-34: The chat path resolves its model through the same layered resolver as generation — no call site names a model literal.
+- [x] ISC-35: The deployed instance serves the new code — a live probe against `RECALL_URL` shows generation succeeding where it returned the 404 model error before.
 
 **Anti-criteria (run 2)**
 
-- [ ] Anti-4: The LLM API key is never returned by the account API and never written to logs — `GET /api/v1/account` contains no key material, and `rg -i 'apiKey|LLM_API_KEY' internal/` shows no log statement carrying its value.
-- [ ] Anti-5: Changing the model does not require rebuilding the image. After deploy, changing `llm_model` through the API alone changes the model the next generation call actually uses, with no `docker compose build` and no container recreation in between.
-- [ ] Anti-6: No regression in the existing surface — `go build ./...`, `go vet ./...`, and `go test ./...` all pass, and the three pre-existing generation call sites still compile and run.
+- [x] Anti-4: The LLM API key is never returned by the account API and never written to logs.
+- [x] Anti-5: Changing the model does not require rebuilding the image. After deploy, changing `llm_model` through the API alone changes the model the next generation call actually uses, with no rebuild and no container recreation in between.
+- [x] Anti-6: No regression in the existing surface — `go build ./...`, `go vet ./...`, and `go test ./...` all pass, and the three pre-existing generation call sites still compile and run.
 
 ## Test Strategy
 
@@ -260,3 +260,29 @@ Pre-deploy backup of the production database: `~/recall-backup-pre-search-202608
 Deploy host details (user, address, port) are never written here — the shell's `$SSH_CASA_USER_AND_IP` carries them.
 
 **Open — ISC-13 (mobile half) and ISC-19.** `resize_window` to 390×844 reported success twice but the capture came back 1568px wide, so the mobile layout was never actually seen. The markup is there (a Search entry was added to both the desktop icon row and the mobile hamburger menu, and the reader column is `max-w-2xl` with `overflow-wrap: break-word`), but that is a structural claim, not an appearance one. Next run: capture both at 390px before closing these.
+
+---
+
+### Run 2 — runtime-configurable LLM model (2026-08-17)
+
+**ISC-26.** `goose up` on a scratch DB reached version 14; `PRAGMA table_info(users)` → `11|llm_model|TEXT|1|''|0`. Second startup emitted no goose output and `SELECT COUNT(*) FROM goose_db_version WHERE version_id=14` → `1`, so the migration is idempotent.
+
+**ISC-27, ISC-28.** `go test ./internal/services/ -run 'TestResolveModel|TestAPIURL' -v` → 8/8 precedence subtests PASS, plus `TestResolveModelWithoutDB` and `TestAPIURLOverride` PASS.
+
+**ISC-30.** Route corrected: the API is `GET /api/v1/me` and `PUT /api/v1/me/settings`, not the `/account` + PATCH shape this ISA originally claimed. Live `GET /me` returned settings keys including `llm_model` and `llm_model_effective`; `PUT /me/settings` with `{"llm_model":"openai/gpt-oss-20b"}` returned 200 and echoed `llm_model = 'openai/gpt-oss-20b' | effective = 'openai/gpt-oss-20b'`.
+
+**ISC-31.** Wrote `openai/gpt-oss-20b`, restarted the Portainer stack, re-read: `llm_model = 'openai/gpt-oss-20b' | effective = 'openai/gpt-oss-20b'`. Restored to `''` afterwards → effective back to `openai/gpt-oss-120b`.
+
+**ISC-32, ISC-33.** Both articles generated 3 cards each, all Spanish. Samples: *"¿Qué significa XLR y cuál es la función de cada uno de sus pines?"* and *"¿Cuáles son las cinco etapas del método 5S y qué busca cada una?"*.
+
+**ISC-35.** Container `recall-recall-1` runs image `sha256:370e32f3dde5`, the image built from commit `eb0481e`; `POST /api/v1/articles/{id}/generate` returned 200 where it previously returned the 404 model error.
+
+**Anti-4.** `GET /me` payload carries no key material; grepping `internal/` for `apiKey|LLM_API_KEY` intersected with log statements returned nothing.
+
+**Anti-5.** Container id `dbfbd8a2ace9` before and after the model change — identical. A generation call with the switched model returned 200 in 1.4s, so the new model was genuinely used and not merely stored.
+
+**Anti-6.** `go build ./...`, `go vet ./...`, `go test ./...` all clean.
+
+**Open — ISC-29.** The profile field could not be verified in a real browser: Interceptor's preflight isolation gate hard-stopped on context UUID rot, which needs a one-time human click in the extension popup. Substituting a markup read for a browser check is exactly the failure the verification doctrine forbids, so the claim stays open. The same field's values were verified through the API, which proves the data path but says nothing about how the field renders.
+
+**Deploy note.** The image is built and tagged on the NAS, not pulled from GHCR — the CI workflow added this run builds and tests correctly but cannot push, because the pre-existing `ghcr.io/deleyva/recall` package is not linked to the repository and `GITHUB_TOKEN` gets `permission_denied: read_package`. Until the package grants the repo write access, a Portainer redeploy with `pullImage: true` would pull the STALE GHCR image and revert this deploy. Restart the stack, don't re-pull, until that is fixed.

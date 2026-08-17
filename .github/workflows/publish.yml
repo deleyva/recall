@@ -1,0 +1,47 @@
+name: Build and publish image
+
+# The deployed stack runs ghcr.io/deleyva/recall:latest, so the image is the
+# real deploy artifact. Building it here keeps that artifact honest — before
+# this workflow existed, `latest` was whatever someone last built by hand.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run tests
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - run: go vet ./... && go test ./...
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          # The NAS is x86_64; nothing else consumes this image.
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/deleyva/recall:latest
+            ghcr.io/deleyva/recall:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

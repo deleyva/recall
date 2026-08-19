@@ -9,6 +9,11 @@ RUN CGO_ENABLED=1 go build -ldflags '-extldflags "-static"' -o /recall ./cmd/rec
 
 FROM alpine:3.18
 
+# GitHub links a package to a repository when the image carries this label.
+# Without the link, Actions' GITHUB_TOKEN has no write access to the package and
+# the publish step fails with "permission_denied: read_package".
+LABEL org.opencontainers.image.source="https://github.com/deleyva/recall"
+
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 

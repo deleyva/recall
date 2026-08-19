@@ -5,7 +5,7 @@ project: recall
 effort: E3
 effort_source: auto
 phase: complete
-progress: 38/41
+progress: 39/41
 iteration: 2
 mode: interactive
 started: 2026-08-17T19:25:00Z
@@ -107,7 +107,7 @@ Semantic or vector search, embeddings, and any external search service — this 
 - [x] ISC-26: Migration `014_llm_model.sql` applies cleanly via `goose up` on a copy of `recall.db` and adds `users.llm_model TEXT NOT NULL DEFAULT ''`; re-running `goose up` is a no-op.
 - [x] ISC-27: Model resolution honours a strict precedence — non-empty `users.llm_model` beats `LLM_MODEL` env, which beats the compiled fallback. A table test covering all eight combinations of (column set/empty, env set/empty, fallback) returns the expected model for every row.
 - [x] ISC-28: `LLM_API_URL` env overrides the compiled Groq endpoint; unset, the compiled endpoint is used. Neither path requires a code change.
-- [ ] ISC-29: `GET /profile` renders an input named `llm_model` carrying the stored value; `POST /profile` with a new value persists it; a subsequent `GET /profile` shows the new value. **[DEFERRED-VERIFY]** — Interceptor's preflight isolation gate hard-stopped on context UUID rot, which needs a one-time human click in the extension popup. An appearance claim closes only on pixels actually seen, and no sanctioned verifier was available, so this stays open rather than being waved through on markup inspection. Follow-up: name the context `interceptor-test` in the popup, then re-run the check.
+- [x] ISC-29: `GET /profile` renders an input named `llm_model` carrying the stored value; `POST /profile` with a new value persists it; a subsequent `GET /profile` shows the new value. *(closed 2026-08-19 in a real browser; the earlier deferral blamed context UUID rot and was wrong — see Verification)*
 - [x] ISC-30: The account API includes an `llm_model` key; writing `{"llm_model":"X"}` returns 200 and a re-GET reports `X`. *(route corrected mid-run — see Changelog)*
 - [x] ISC-31: The stored model survives a stack restart — the value read after restart equals the value written before it (it lives in the DB volume, not process memory).
 - [x] ISC-32: Flashcard generation for article `8bcaecbbb8dd861eaafd4664c4db50c2` returns HTTP 200 and creates ≥3 cards whose front and back are in Spanish (the article's language).
@@ -286,3 +286,12 @@ Deploy host details (user, address, port) are never written here — the shell's
 **Open — ISC-29.** The profile field could not be verified in a real browser: Interceptor's preflight isolation gate hard-stopped on context UUID rot, which needs a one-time human click in the extension popup. Substituting a markup read for a browser check is exactly the failure the verification doctrine forbids, so the claim stays open. The same field's values were verified through the API, which proves the data path but says nothing about how the field renders.
 
 **Deploy note.** The image is built and tagged on the NAS, not pulled from GHCR — the CI workflow added this run builds and tests correctly but cannot push, because the pre-existing `ghcr.io/deleyva/recall` package is not linked to the repository and `GITHUB_TOKEN` gets `permission_denied: read_package`. Until the package grants the repo write access, a Portainer redeploy with `pullImage: true` would pull the STALE GHCR image and revert this deploy. Restart the stack, don't re-pull, until that is fixed.
+
+**ISC-29 — closed 2026-08-19, real browser.** The 2026-08-17 deferral misdiagnosed the cause. The pinned context `interceptor-test` was configured correctly all along; the blocker was a stale `interceptor-daemon` (pid 82315, up 4d20h, from before the 0.22.37 upgrade) squatting on port 19222, so the new CLI could neither reuse it nor start its own. `pkill -f interceptor-daemon` cleared it and the isolation gate passed on the next run.
+
+Four states verified, two of them in viewed pixels:
+1. Default: field empty, helper reads "Currently generating with `openai/gpt-oss-120b`". Pixels viewed.
+2. Typed `openai/gpt-oss-20b` into the field and clicked Save Settings through the real UI. Pixels viewed after reload: input shows `openai/gpt-oss-20b`, helper reads "Currently generating with `openai/gpt-oss-20b`".
+3. Cleared the field and saved: value empty, helper back to `openai/gpt-oss-120b`. State claim, checked by DOM read; its appearance is state 1, already seen.
+
+**Finding — the placeholder reads as a value.** `placeholder="openai/gpt-oss-120b"` renders dark enough in this theme that a viewed screenshot cannot distinguish "empty, following the instance default" from "explicitly pinned to gpt-oss-120b". Those two states mean different things: the second survives a change to `LLM_MODEL`, the first does not. Caught only because a DOM read contradicted what the pixels suggested. Not fixed this run.

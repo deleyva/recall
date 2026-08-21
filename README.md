@@ -86,6 +86,48 @@ would actually use right now).
    - **Good** — remembered, normal interval
    - **Easy** — effortless, longer interval
 
+## CLI
+
+The binary doubles as its own admin tool. Every subcommand reads `RECALL_DB_PATH`,
+so any of them can be pointed at a copy of the database instead of the live one.
+
+```bash
+recall list-users
+recall reset-password <email> <new-password>
+recall create-token <email> <token-name>
+recall set-admin <email>
+recall reindex                        # rebuild the full-text index
+recall routes                         # print the API route table
+recall metrics <email> [--json] [--tz <Zone>]
+```
+
+### `recall metrics`
+
+Reports what the collection is actually doing, rather than how big it is. It is
+read-only, and two runs against an unchanged database produce identical bytes, so
+its output can be diffed over time or asserted on in a probe.
+
+```bash
+RECALL_DB_PATH=./copy.db recall metrics you@example.com --tz Europe/Madrid
+```
+
+It prints eight measures:
+
+| Measure | What it tells you |
+|---|---|
+| **True retention** | Share of *spaced* reviews (`elapsed_days > 0`) not rated Again. First exposures are excluded — they say nothing about remembering. |
+| **Rating distribution** | The four-way split, plus, for each button, how often the *next* review of that card was a failure. A middle button that predicts failure no better than Good is noise the scheduler cannot use. |
+| **Leeches** | Cards at or above 8 lapses, and the highest lapse count. A card failed eight times is usually malformed rather than hard. |
+| **Sibling interference** | Share of reviews landing on the same day as another card from the same article. Siblings share retrieval cues, so the first one primes the rest and the session reports a recall it did not earn. |
+| **Backs with a list** | Cards whose answer is an enumeration. A five-item answer cannot be failed, only failed partially — and no rating button says that. |
+| **Fronts with a conjunction** | Cards asking two things at once, matched on `y` / `e` / `and` as whole words. |
+| **Cards per deck** | Whether the collection has any structure to slice by. |
+| **Reviews by hour** | When studying actually happens, in the requested zone. |
+
+Percentages are rounded to one decimal; day boundaries and hours use `--tz`
+(defaulting to the system zone), so a session ending after midnight lands on the
+day the learner thinks it does.
+
 ## API
 
 All endpoints require authentication via session cookie.

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/deleyva/recall/internal/config"
 	"github.com/deleyva/recall/internal/database"
@@ -108,6 +110,48 @@ func main() {
 				log.Fatalf("User not found: %s", os.Args[2])
 			}
 			fmt.Printf("User %s is now admin\n", os.Args[2])
+			return
+		case "metrics":
+			if len(os.Args) < 3 {
+				fmt.Println("Usage: recall metrics <email> [--json] [--tz <Zone>]")
+				os.Exit(1)
+			}
+			email := os.Args[2]
+			asJSON := false
+			loc := time.Local
+			for i := 3; i < len(os.Args); i++ {
+				switch os.Args[i] {
+				case "--json":
+					asJSON = true
+				case "--tz":
+					if i+1 >= len(os.Args) {
+						log.Fatal("--tz needs a zone name, e.g. --tz Europe/Madrid")
+					}
+					i++
+					l, err := time.LoadLocation(os.Args[i])
+					if err != nil {
+						log.Fatalf("Unknown timezone %q: %v", os.Args[i], err)
+					}
+					loc = l
+				default:
+					log.Fatalf("Unknown argument: %s", os.Args[i])
+				}
+			}
+			m, err := services.NewMetricsService(db).Compute(email, loc)
+			if err != nil {
+				log.Fatalf("Failed: %v", err)
+			}
+			if asJSON {
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				if err := enc.Encode(m); err != nil {
+					log.Fatalf("Failed: %v", err)
+				}
+				return
+			}
+			if err := services.RenderMetrics(os.Stdout, m); err != nil {
+				log.Fatalf("Failed: %v", err)
+			}
 			return
 		}
 	}

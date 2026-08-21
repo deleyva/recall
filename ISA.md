@@ -9,7 +9,7 @@ progress: 54/87
 iteration: 3
 mode: interactive
 started: 2026-08-20T14:30:00Z
-updated: 2026-08-21T11:15:00Z
+updated: 2026-08-21T12:20:00Z
 principal_stated_goal: "usando los datos del artículo, crea un ISA o completa/reelabora el existente para indroducir las novedades que marca el artículo, para cerrar la brecha entre ANKI/Buenas prácticas y Recall"
 principal_stated_goal_source: prompt
 principal_stated_goal_signal: 4
@@ -620,6 +620,21 @@ IDENTICAL (477 cards)
 Existing cards keep the schedule they earned; the new behaviour applies from each card's next review.
 
 **Regression.** `go build ./...`, `go vet ./...` clean; all four test packages green.
+
+### Deploy — 2026-08-21
+
+Pushed to `main`; CI ran `go vet ./... && go test ./...`, built and published
+`ghcr.io/deleyva/recall:latest`; the stack was redeployed with `pullImage`.
+
+- Pre-deploy backup of the live database taken first (schema 14, 477 cards, 1876 reviews).
+- Container up on the new image, and the startup log shows the schema move: `goose: successfully migrated database to version: 15` followed by `Recall starting on :8080`. Migration 015 had already been rehearsed on a copy of this database, FSRS columns unchanged.
+- Live probes: `/api/v1/health` → 200 `{"api":"v1","status":"ok"}`; an unauthenticated `/api/v1/search` → 401.
+- Live behaviour, in a real browser against the deployed instance: opening a study session and revealing a card shows the rating row reading `Again 5m`. Before this deploy the same row read in days. Nothing was graded — revealing does not touch scheduling.
+- The shipped binary carries the new command: `recall metrics` run inside the deployed container returns the same figures as the local run against a copy, which is also the pre-change baseline the outcome criteria (ISC-49, ISC-65, ISC-71, ISC-72) will be measured against.
+
+Note on the four criteria stated as measured bands: they are deliberately not
+closed here. They compare a window of behaviour after the change against the
+baseline above, and there is no such window yet.
 
 ### Remaining criteria
 

@@ -73,6 +73,7 @@ type Card struct {
 	ArticleID     *string   `json:"article_id,omitempty"`
 	Front         string    `json:"front"`
 	Back          string    `json:"back"`
+	Kind          string    `json:"kind"`
 	Due           time.Time `json:"due"`
 	Stability     float64   `json:"stability"`
 	Difficulty    float64   `json:"difficulty"`

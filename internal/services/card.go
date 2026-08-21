@@ -15,6 +15,20 @@ type CardService struct {
 	db *sql.DB
 }
 
+// Card kinds. A recognition card reveals its answer when the learner asks for
+// it; a production card requires the learner to type the answer first, so the
+// system observes whether it was produced instead of trusting a self-report.
+const (
+	KindRecognition = "recognition"
+	KindProduction  = "production"
+)
+
+// ValidCardKind guards the column SQLite cannot guard for us — ALTER TABLE
+// cannot add a CHECK constraint, so the check lives here.
+func ValidCardKind(kind string) bool {
+	return kind == KindRecognition || kind == KindProduction
+}
+
 func NewCardService(db *sql.DB) *CardService {
 	return &CardService{db: db}
 }
@@ -92,7 +106,7 @@ func (s *CardService) List(deckID string, page, perPage int) ([]models.Card, int
 
 	rows, err := s.db.Query(`
 		SELECT id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days,
-			reps, lapses, state, last_review, created_at, updated_at, article_id
+			reps, lapses, state, last_review, created_at, updated_at, article_id, kind
 		FROM cards WHERE deck_id = ?
 		ORDER BY created_at DESC
 		LIMIT ? OFFSET ?
@@ -148,7 +162,7 @@ func (s *CardService) ListForUser(userID, deckID, articleID string, dueOnly bool
 
 	rows, err := s.db.Query(`
 		SELECT c.id, c.deck_id, c.front, c.back, c.due, c.stability, c.difficulty, c.elapsed_days,
-			c.scheduled_days, c.reps, c.lapses, c.state, c.last_review, c.created_at, c.updated_at, c.article_id
+			c.scheduled_days, c.reps, c.lapses, c.state, c.last_review, c.created_at, c.updated_at, c.article_id, c.kind
 		FROM cards c JOIN decks d ON c.deck_id = d.id
 		WHERE `+where+`
 		ORDER BY c.created_at DESC
@@ -173,7 +187,7 @@ func (s *CardService) ListForUser(userID, deckID, articleID string, dueOnly bool
 func (s *CardService) Get(cardID string) (*models.Card, error) {
 	row := s.db.QueryRow(`
 		SELECT id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days,
-			reps, lapses, state, last_review, created_at, updated_at, article_id
+			reps, lapses, state, last_review, created_at, updated_at, article_id, kind
 		FROM cards WHERE id = ?
 	`, cardID)
 	return scanCardRow(row)
@@ -183,7 +197,7 @@ func (s *CardService) Get(cardID string) (*models.Card, error) {
 func (s *CardService) GetForUser(cardID, userID string) (*models.Card, error) {
 	row := s.db.QueryRow(`
 		SELECT c.id, c.deck_id, c.front, c.back, c.due, c.stability, c.difficulty, c.elapsed_days, c.scheduled_days,
-			c.reps, c.lapses, c.state, c.last_review, c.created_at, c.updated_at, c.article_id
+			c.reps, c.lapses, c.state, c.last_review, c.created_at, c.updated_at, c.article_id, c.kind
 		FROM cards c
 		JOIN decks d ON c.deck_id = d.id
 		WHERE c.id = ? AND d.user_id = ?
@@ -219,6 +233,30 @@ func (s *CardService) UpdateForUser(cardID, userID, front, back string) error {
 		return fmt.Errorf("update card: %w", err)
 	}
 	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("card not found")
+	}
+	return nil
+}
+
+// SetKindForUser switches a card between recognition and production. It touches
+// no FSRS column: a card that changes how it is asked keeps the schedule it has
+// earned.
+func (s *CardService) SetKindForUser(cardID, userID, kind string) error {
+	if !ValidCardKind(kind) {
+		return fmt.Errorf("invalid card kind: %s", kind)
+	}
+	result, err := s.db.Exec(`
+		UPDATE cards SET kind = ?, updated_at = ?
+		WHERE id = ? AND deck_id IN (SELECT id FROM decks WHERE user_id = ?)
+	`, kind, time.Now().UTC().Format(time.RFC3339), cardID, userID)
+	if err != nil {
+		return fmt.Errorf("set card kind: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set card kind: %w", err)
+	}
 	if rows == 0 {
 		return fmt.Errorf("card not found")
 	}
@@ -322,7 +360,7 @@ func scanCardFromRow(s scannable) (*models.Card, error) {
 	var due, lastReview, createdAt, updatedAt string
 	var articleID *string
 	err := s.Scan(&c.ID, &c.DeckID, &c.Front, &c.Back, &due, &c.Stability, &c.Difficulty,
-		&c.ElapsedDays, &c.ScheduledDays, &c.Reps, &c.Lapses, &c.State, &lastReview, &createdAt, &updatedAt, &articleID)
+		&c.ElapsedDays, &c.ScheduledDays, &c.Reps, &c.Lapses, &c.State, &lastReview, &createdAt, &updatedAt, &articleID, &c.Kind)
 	if err != nil {
 		return nil, fmt.Errorf("scan card: %w", err)
 	}

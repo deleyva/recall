@@ -30,7 +30,7 @@ func (s *ReviewService) GetNextDue(deckID string) (*models.Card, int, error) {
 	// Get next due card: new/learning first (state 0,1), then review/relearning (state 2,3)
 	row := s.db.QueryRow(`
 		SELECT id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days,
-			reps, lapses, state, last_review, created_at, updated_at, article_id
+			reps, lapses, state, last_review, created_at, updated_at, article_id, kind
 		FROM cards
 		WHERE deck_id = ? AND due <= ?
 		ORDER BY

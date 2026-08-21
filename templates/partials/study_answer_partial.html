@@ -1,7 +1,35 @@
 {{define "study_answer_partial.html"}}
+{{$suggested := 0}}{{if .Check}}{{$suggested = .Check.SuggestedRating}}{{end}}
 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 text-center">
     <div class="text-lg font-medium mb-4">{{.Card.Front | safeHTML}}</div>
     <hr class="my-4">
+
+    {{if .Check}}
+    <!-- What the learner produced, against what the card stores. The system
+         reports the comparison; the grade below is still theirs to give. -->
+    <div class="mb-6 text-left">
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+            {{if .Check.Match}}
+            <span class="text-sm font-medium px-2 py-1 rounded bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Produced</span>
+            {{else}}
+            <span class="text-sm font-medium px-2 py-1 rounded bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">Not produced</span>
+            {{end}}
+            <span class="text-xs text-gray-500 dark:text-gray-400">the highlighted rating is a suggestion — override it if you disagree</span>
+        </div>
+
+        <div class="text-sm text-gray-500 dark:text-gray-400 mb-1">You wrote</div>
+        <div class="px-3 py-2 mb-3 rounded bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 break-words">
+            {{if .Check.Typed}}{{.Check.Typed}}{{else}}<span class="italic text-gray-400">(nothing)</span>{{end}}
+        </div>
+
+        <div class="text-sm text-gray-500 dark:text-gray-400 mb-1">Comparison</div>
+        <div class="px-3 py-2 rounded bg-gray-50 dark:bg-gray-900 leading-relaxed break-words">
+            {{range .Check.Diff}}{{if eq .Status "same"}}<span class="text-green-700 dark:text-green-400">{{.Text}}</span> {{else if eq .Status "missing"}}<span class="text-red-700 dark:text-red-400 font-semibold underline decoration-wavy" title="missing from your answer">{{.Text}}</span> {{else}}<span class="text-orange-600 dark:text-orange-400 line-through" title="not in the stored answer">{{.Text}}</span> {{end}}{{end}}
+        </div>
+    </div>
+    <hr class="my-4">
+    {{end}}
+
     <div class="text-xl mb-8 min-h-[80px] text-green-700 dark:text-white text-left">
         {{.Card.Back | safeHTML}}
     </div>
@@ -28,7 +56,7 @@
         <form hx-post="/decks/{{.DeckID}}/study" hx-target="#study-area" hx-swap="innerHTML">
             <input type="hidden" name="card_id" value="{{.Card.ID}}">
             <input type="hidden" name="rating" value="1">
-            <button type="submit" class="w-full bg-red-500 text-white px-3 py-3 rounded-lg hover:bg-red-600">
+            <button type="submit" {{if eq $suggested 1}}autofocus{{end}} class="w-full bg-red-500 text-white px-3 py-3 rounded-lg hover:bg-red-600 {{if eq $suggested 1}}ring-4 ring-red-300 dark:ring-red-800{{end}}">
                 <div class="font-medium">Again</div>
                 <div class="text-xs opacity-80">{{index .Intervals 1}}</div>
             </button>
@@ -36,7 +64,7 @@
         <form hx-post="/decks/{{.DeckID}}/study" hx-target="#study-area" hx-swap="innerHTML">
             <input type="hidden" name="card_id" value="{{.Card.ID}}">
             <input type="hidden" name="rating" value="2">
-            <button type="submit" class="w-full bg-orange-500 text-white px-3 py-3 rounded-lg hover:bg-orange-600">
+            <button type="submit" {{if eq $suggested 2}}autofocus{{end}} class="w-full bg-orange-500 text-white px-3 py-3 rounded-lg hover:bg-orange-600 {{if eq $suggested 2}}ring-4 ring-orange-300 dark:ring-orange-800{{end}}">
                 <div class="font-medium">Hard</div>
                 <div class="text-xs opacity-80">{{index .Intervals 2}}</div>
             </button>
@@ -44,7 +72,7 @@
         <form hx-post="/decks/{{.DeckID}}/study" hx-target="#study-area" hx-swap="innerHTML">
             <input type="hidden" name="card_id" value="{{.Card.ID}}">
             <input type="hidden" name="rating" value="3">
-            <button type="submit" class="w-full bg-green-500 text-white px-3 py-3 rounded-lg hover:bg-green-600">
+            <button type="submit" {{if eq $suggested 3}}autofocus{{end}} class="w-full bg-green-500 text-white px-3 py-3 rounded-lg hover:bg-green-600 {{if eq $suggested 3}}ring-4 ring-green-300 dark:ring-green-800{{end}}">
                 <div class="font-medium">Good</div>
                 <div class="text-xs opacity-80">{{index .Intervals 3}}</div>
             </button>
@@ -52,7 +80,7 @@
         <form hx-post="/decks/{{.DeckID}}/study" hx-target="#study-area" hx-swap="innerHTML">
             <input type="hidden" name="card_id" value="{{.Card.ID}}">
             <input type="hidden" name="rating" value="4">
-            <button type="submit" class="w-full bg-blue-500 text-white px-3 py-3 rounded-lg hover:bg-blue-600">
+            <button type="submit" {{if eq $suggested 4}}autofocus{{end}} class="w-full bg-blue-500 text-white px-3 py-3 rounded-lg hover:bg-blue-600 {{if eq $suggested 4}}ring-4 ring-blue-300 dark:ring-blue-800{{end}}">
                 <div class="font-medium">Easy</div>
                 <div class="text-xs opacity-80">{{index .Intervals 4}}</div>
             </button>

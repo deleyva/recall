@@ -1,58 +1,84 @@
 ---
-task: "Recall runtime-configurable LLM model + flashcard backfill"
-slug: 20260817-193000_recall-llm-model-runtime-config
+task: "Close the gap between Recall and Anki-grade memory fidelity"
+slug: 20260820-143000_recall-memory-fidelity
 project: recall
-effort: E3
-effort_source: auto
-phase: complete
-progress: 39/41
-iteration: 2
+effort: E4
+effort_source: gate-floor
+phase: build
+progress: 54/87
+iteration: 3
 mode: interactive
-started: 2026-08-17T19:25:00Z
-updated: 2026-08-17T20:05:00Z
-principal_stated_goal: "ok! arregla recall, despliega y genera las flashcards. arreglarlo de manera que un nuevo cambio de modelo en el futuro no suponga todo un despliegue de nuevo."
+started: 2026-08-20T14:30:00Z
+updated: 2026-08-21T11:15:00Z
+principal_stated_goal: "usando los datos del artículo, crea un ISA o completa/reelabora el existente para indroducir las novedades que marca el artículo, para cerrar la brecha entre ANKI/Buenas prácticas y Recall"
 principal_stated_goal_source: prompt
-principal_stated_goal_signal: 2
-principal_stated_goal_locked: 2026-08-17T19:25:00Z
-prior_run: "20260809-193403_recall-search-reader-api — ISC-1…ISC-25, Anti-1…Anti-3 (complete)"
+principal_stated_goal_signal: 4
+principal_stated_goal_locked: 2026-08-20T14:30:00Z
+prior_run: "20260809-193403_recall-search-reader-api — ISC-1…ISC-25, Anti-1…Anti-3 (complete) · 20260817-193000_recall-llm-model-runtime-config — ISC-26…ISC-35, Anti-4…Anti-6 (complete)"
 context_sufficient: true
 interview_invoked: false
 ---
 
 # Recall — ISA
 
+> Project ISA. Long-lived system of record for the application: the claims Recall
+> already satisfies (with evidence) plus the claims that do not hold yet.
+> ISC IDs are stable and never renumbered. ISC-1…ISC-25 belong to the search /
+> reader / API run, ISC-26…ISC-35 to the runtime LLM-model run; both record
+> current state. ISC-36 onward is the memory-fidelity work.
+>
+> **This file is public** (`github.com/deleyva/recall`). No operator usage statistics,
+> no host, user, port or absolute home paths — thresholds here are product targets,
+> never a person's measured behaviour.
+
 ## Problem
 
-Recall stores a lot of text the user can never see or search. Every article carries up to 50KB of extracted body text in `articles.content`, imported either by URL fetch or by the Readeck sync, and the only thing that text is ever used for is feeding the LLM flashcard generator and the per-article chat. The UI shows a title, a domain, and a card count — the text itself is invisible. Generated flashcards live inside decks and are only reachable by walking to the deck. Chat messages are reachable only from the article that produced them. There is no way to ask "where did I read that thing about X" and get an answer, and there is no way to re-read a saved article inside Recall — the only link goes to the original URL, which may be paywalled, changed, or dead.
+Recall schedules well and measures nothing worth measuring.
 
-The REST API has the same shape problem in a different place: it covers decks, cards, study, and stats well, but articles are list/create/delete only, `Article.Content` is `json:"-"` so the stored text is not retrievable at all, and whole subsystems (chat, podcasts CRUD, profile, tokens, search) have no endpoints. Anything external that wants to use Recall as a text store — an agent, a script, LifeOS — currently cannot read back what Recall holds.
+The scheduler is FSRS, the storage is sound, the review log is complete — and yet the number the app reports back is not the number the user needs. Recall asks the learner to look at a question, turn the card over, and self-report whether they knew it. That measures **recognition**: whether a revealed answer feels familiar. Learners overwhelmingly want the opposite capability — **production**: saying the thing when nothing is in front of them. An app whose only instrument is self-graded recognition will report high retention to a user who cannot produce the material, and neither the user nor the algorithm has any way to notice.
+
+Every other defect compounds that one:
+
+- **The generator is instructed to produce non-atomic cards.** `DefaultFlashcardPrompt` in `internal/services/llm.go` spends five consecutive rules on HTML list formatting (`<ul><li>`, `<ol><li>`, "never use raw numbered text") and zero on atomicity. A card whose answer is a five-item list cannot be *failed*, only failed-partially — and the four rating buttons have no way to express that. The learner presses Hard or Good, the whole cluster gets a long interval, and the items that were not recalled are never counted as missed. This is a direct inversion of SuperMemo's rules 4, 9 and 10 (minimum information; avoid sets; avoid enumerations).
+- **Cards generated from one article are siblings and are served consecutively.** The cron creates a whole batch per article in a single call, all with `due = now`; `GetNextDue` orders by `due ASC`, so the batch arrives as a block. Siblings share retrieval cues, so the first card primes the rest — the classic conditions for cue overload and retrieval-induced forgetting. Anki buries siblings by default precisely to prevent this; Recall has no such mechanism, and no schema slot for one.
+- **Failure has no short loop.** `internal/scheduler/scheduler.go` sets `params.EnableShortTerm = false`, which disables FSRS's short-term scheduler entirely. `go-fsrs` v3.3.1's own `TestLongTermScheduler` shows the consequence: a failed review card returns in days, never in minutes, never in the same session. The first effortful re-retrieval — the moment recognition becomes production — never happens inside a session.
+- **Intervals are unfuzzed.** `EnableFuzz` stays false, so cards created together and rated alike march together indefinitely. The first day's clustering becomes permanent.
+- **There is nothing to slice the collection by.** The `cards` table carries `deck_id`, `front`, `back` and the FSRS columns. No `tags`, no `suspended`, no `buried_until`, no flags. The only study route is `/decks/:id/study`, so a collection that has accumulated in one deck cannot be cut by topic, source, or difficulty, and there is no way to build an ad-hoc session over a subset.
+- **Bad cards are never detected.** `cards.lapses` is stored and never read. Anki flags a card as a leech at eight lapses and suspends it, on the reasoning that a card failed eight times is not hard, it is malformed. Recall re-serves it forever with no signal.
+- **The one daily limit is on the wrong side.** `daily_card_limit` bounds how many cards the cron *generates*; nothing bounds how many are *studied*. New and review load are neither separated nor capped.
 
 ## Vision
 
-Typing a half-remembered phrase into one box and getting back the exact article, flashcard, or chat line that contains it, in under a second, with the matched words highlighted — then clicking through and reading the whole saved text inside Recall, in a comfortable reading column, with the search terms still lit up. The stored text stops being write-only. And everything the web UI can do, a token-authenticated HTTP client can do too, from a spec that is checked against the router rather than hand-maintained prose.
+You open a session and Recall makes you say it. The title, the name, the definition — typed or spoken before anything is revealed, with the app knowing whether you actually produced it rather than trusting your report. The number on the dashboard drops, and that drop is the good news: for the first time it means something. Cards arrive one idea at a time, never two siblings in a row, and when one is missed it comes back before you leave the session instead of two days later. When a card keeps losing, the app says so and offers to help you rewrite it. And when you need to drill one topic — one author, one source, everything you keep getting wrong — you can build that session in five seconds without wrecking the schedule you have earned everywhere else.
 
 ## Out of Scope
 
-Semantic or vector search, embeddings, and any external search service — this is lexical full-text search over SQLite and nothing more. No re-fetching or re-extraction of article HTML to improve stored text quality, no image or PDF search, no cross-user or public search. Not rebuilding the Knowledge Explorer that migration 012 just dropped. No API versioning scheme beyond the existing `/api/v1`, no OAuth, no rate limiting, no pagination redesign of existing endpoints. No new frontend build step — the app stays HTMX plus Tailwind CDN.
+**FSRS parameter optimization on pre-change review history.** Optimizing a memory model against inflated self-grades produces longer intervals and amplifies the exact failure this work exists to fix. The optimizer is a later run, gated on a sustained period of honest grading — not part of this one.
+
+Also excluded: changing the FSRS library version or upgrading to FSRS-5/6; a configurable desired-retention setting (same gating reason as the optimizer); image occlusion; audio/TTS on cards; mobile native apps; a spaced-repetition algorithm of our own; multi-user sharing of decks or tags; any frontend build step; semantic search or embeddings; automated rewriting or deletion of existing cards without per-card human confirmation.
 
 ## Principles
 
-- Stored data the user cannot reach is a defect, not a feature. Anything Recall persists should be readable and findable by the user who owns it.
-- Row-level isolation is absolute: every read path filters by `user_id`, and a new read path is a new place to leak.
-- The spec follows the code. Documentation that can drift silently is documentation that will drift; the OpenAPI file is checked against the live router by a test.
-- Search must survive real input. A user types accents, quotes, and operator words without meaning them as syntax; the query builder's job is to never turn that into an error.
+- **An instrument that cannot register failure is not an instrument.** Every scoring path must have a state that means "did not produce it," and card formulation must keep that state reachable. A card that can only be partially missed silently destroys the measurement.
+- **Self-report is the weakest possible evidence, so the system asks for it last.** Where the app can observe the outcome — a typed answer compared against the expected one — it observes first and lets the human confirm, rather than asking the human to adjudicate their own recall from memory of a memory.
+- **Scheduling state is sacred; presentation is not.** Hiding, ordering, filtering and burying may change *when* a card is shown. They may never silently mutate `due`, `stability`, `difficulty`, `state` or `lapses`. Any feature that blurs that line is a scheduling bug wearing a UI costume.
+- **Granularity of the card is granularity of the algorithm.** A card carrying four facts is scheduled at the pace of its hardest fact. Atomicity is not a style preference; it is what lets the scheduler work per-item.
+- **The learner's data is theirs, and destructive help is not help.** Anything that rewrites, splits or deletes existing cards proposes and waits. Bulk automation may never act on content the user has not seen.
+- **Row-level isolation is absolute.** Every new read path filters by `user_id`; a new query is a new place to leak.
 
 ## Constraints
 
-- Go 1.25, Echo v4, SQLite via `modernc.org/sqlite`, pure Go — `CGO_ENABLED=0` cross-compilation to linux/amd64 must keep working, so no cgo-dependent search extension.
-- Schema changes go through goose migrations in `migrations/`, applied automatically at startup against the live NAS database — the migration must be safe on a populated database.
-- Frontend stays HTMX + Tailwind CDN + the per-page template registry; no bundler, no SPA.
-- Auth stays session cookie for web and `Bearer rcl_...` token for `/api/*`, enforced by the existing `RequireAuth` middleware.
-- Derived from the principal's compound ask: a per-item control that opens the stored text for reading, and an API that exposes that text plus every other Recall capability.
+- Go 1.25, Echo v4, SQLite via `modernc.org/sqlite`, pure Go. `CGO_ENABLED=0 GOOS=linux GOARCH=amd64` cross-compilation must keep producing the deploy binary — no cgo-dependent extension.
+- Schema changes go through goose migrations in `migrations/`, applied automatically at startup against a live, populated database. Every migration is rehearsed on a downloaded copy before it reaches a running instance.
+- Frontend stays HTMX + Tailwind CDN + the per-page template registry. No bundler, no SPA, no npm.
+- Auth stays session cookie for web and `Bearer rcl_...` for `/api/*`, enforced by `RequireAuth`.
+- FSRS stays `go-fsrs` v3 for this run. The scheduler changes in scope are configuration flags on the existing library, not a version bump.
+- Existing cards keep their scheduling state across every change in this ISA. No mass reschedule, no state reset.
+- The scheduler is the only place allowed to write FSRS columns.
 
 ## Goal
 
-"Quiero que en la app Recall pongas un campo de búsqueda que pueda buscar en el texto de todos los artículos guardados, generados, todo el texto que guardas, pero no está visible." Concretely: a SQLite FTS5 index over every text Recall stores for a user — article bodies, flashcard fronts and backs, chat messages — served through a live search page and a JSON endpoint; a reader view that renders an article's stored text inside Recall with search terms highlighted; and a REST API that covers the whole application surface, documented by an OpenAPI file that a test proves matches the router.
+"usando los datos del artículo, crea un ISA o completa/reelabora el existente para indroducir las novedades que marca el artículo, para cerrar la brecha entre ANKI/Buenas prácticas y Recall". Concretely: Recall gains the mechanisms that make a spaced-repetition system measure production rather than recognition — typed-answer production cards with a system-observed verdict, sibling burying, same-day relearning, interval fuzz, tags with filtered non-rescheduling study sessions, leech detection, separated daily study limits, and an atomic card-formulation prompt with a confirm-first splitter for legacy cards — each one verified by a probe, and the whole judged by a repeatable metrics command whose numbers move into the target bands.
 
 ## Criteria
 
@@ -121,6 +147,82 @@ Semantic or vector search, embeddings, and any external search service — this 
 - [x] Anti-5: Changing the model does not require rebuilding the image. After deploy, changing `llm_model` through the API alone changes the model the next generation call actually uses, with no rebuild and no container recreation in between.
 - [x] Anti-6: No regression in the existing surface — `go build ./...`, `go vet ./...`, and `go test ./...` all pass, and the three pre-existing generation call sites still compile and run.
 
+### Memory fidelity — the instrument
+
+- [x] ISC-36: `recall metrics` prints, for a given user, eight measures from the review log and card table: true retention over spaced reviews (`elapsed_days > 0`), the four-way rating distribution, the count of cards at or above the leech threshold, the share of reviews falling on the same day as a sibling of the same article, the share of card backs containing `<li>`, the share of card fronts containing a coordinating conjunction, the card count per deck, the review count per local hour, and — folded in during the build, because ISC-72 has no other probe — how often each rating is followed by a failure on the next review of that card. Output is stable, machine-readable, and re-runnable against any database copy.
+- [x] ISC-37: `recall metrics` run twice against the same unchanged database file produces byte-identical output.
+
+### Production, not recognition
+
+- [x] ISC-38: Migration adds `cards.kind` with values `recognition` and `production`, defaulting to `recognition`, and applies cleanly on a populated copy without altering any existing FSRS column.
+- [x] ISC-39: A `production` card's study view renders a text input and does not include the card's `back` anywhere in the served HTML until the learner submits.
+- [x] ISC-40: The submitted answer is compared to the expected answer case-insensitively, accent-insensitively, and ignoring surrounding punctuation and whitespace; the answer view shows the typed answer against the expected one with the differences marked.
+- [x] ISC-41: When the comparison finds no match, the answer view presents `Again` as the pre-selected rating; when it matches, `Good` is pre-selected. The learner can always override.
+- [x] ISC-42: A `recognition` card's study flow is byte-for-byte the flow that exists today — no input box, no comparison, no change in served markup.
+- [x] ISC-43: The reveal is server-side: a request that skips the submit step cannot obtain the `back` of a `production` card for the card currently in play.
+
+### Sibling burying
+
+- [ ] ISC-44: Migration adds `cards.buried_until` (nullable timestamp) and applies cleanly on a populated copy.
+- [ ] ISC-45: Answering a card that has a non-null `article_id` sets `buried_until` to the next local day boundary for every other card of that article that is currently due and unanswered today.
+- [ ] ISC-46: `GetNextDue` excludes any card whose `buried_until` is in the future, and includes it again once that timestamp has passed.
+- [ ] ISC-47: Burying a card changes no FSRS column — a row snapshot of `due`, `stability`, `difficulty`, `elapsed_days`, `scheduled_days`, `reps`, `lapses`, `state`, `last_review` before and after a bury is identical.
+- [ ] ISC-48: Deck overview offers an unbury control that clears `buried_until` for that deck, and after using it the previously buried cards are served again in the same session.
+- [ ] ISC-49: Measured by `recall metrics` over the 30 days following deployment, the share of reviews falling on the same day as a sibling of the same article is below 20%.
+
+### Scheduler honesty
+
+- [x] ISC-50: `EnableFuzz` is true, and a test proves a review interval of 2.5 days or more is dispersed rather than returned exactly — the same card state scheduled across a sweep of review seconds yields more than one distinct interval, every one of them inside the library's documented fuzz range, where the same sweep with fuzz off yields exactly one. *(restated mid-run — see Changelog)*
+- [x] ISC-51: `EnableShortTerm` is no longer forced false, and a test proves a review card rated `Again` receives a next interval under 24 hours rather than the multi-day interval the long-term-only scheduler produces.
+- [x] ISC-52: Failing a card during a study session causes that card to be served again within the same session — probed end to end against a running server, not asserted from the scheduler alone.
+- [x] ISC-53: Enabling both flags rewrites no existing row: a before/after snapshot of every card's FSRS columns across a server restart with the new configuration is identical.
+- [x] ISC-74: When nothing is due, the queue serves a learning or relearning card whose due date falls inside a bounded look-ahead window, and never pulls a review card forward. Without it a failed card's five-minute step outlives the session and the short loop restored by ISC-51 never closes.
+- [x] ISC-75: The short loop terminates: two `Good` ratings take a new card from New through Learning to Review with an interval of at least a day. This is the anti-regression for migration 010, which exists because cards once accumulated in Learning and cycled.
+
+### Tags and filtered study
+
+- [ ] ISC-54: Migration adds a tag store allowing many tags per card, with `::` hierarchy expressed in the tag name, and applies cleanly on a populated copy.
+- [ ] ISC-55: Cards created by the flashcard generator and by the Readeck sync are tagged automatically from their source article, so tags accumulate with no manual step.
+- [ ] ISC-56: A backfill assigns at least one tag, derived from the source article, to every existing card that has an `article_id`; cards without one are reported rather than silently skipped.
+- [ ] ISC-57: A study session can be built from a tag filter, a minimum-lapses filter, or both, spanning every deck the user owns, and it never serves another user's card.
+- [ ] ISC-58: A filtered session offers a no-reschedule mode; studying a full session in that mode leaves `due`, `stability`, `difficulty`, `state`, `reps` and `lapses` unchanged for every card served, verified by a row snapshot before and after.
+- [ ] ISC-59: A filtered session in normal mode does reschedule, and a review performed there is written to `review_logs` exactly as one performed in a deck session.
+
+### Leech detection
+
+- [ ] ISC-60: A card reaching the leech threshold (8 lapses) is flagged, and the flag is visible on the card during study.
+- [ ] ISC-61: A leech list is reachable from the dashboard and offers, per card, the three documented remedies: edit the card, delete it, or suspend it.
+- [ ] ISC-62: Migration adds `cards.suspended`; a suspended card is never served by any study path — deck, filtered, or otherwise — and unsuspending restores it with its FSRS state untouched.
+
+### Atomic formulation
+
+- [ ] ISC-63: `DefaultFlashcardPrompt` states the minimum-information principle: one idea per card, an answer of a single element, no enumerations (a source list of N items becomes N cards), no coordinating conjunction in the question, HTML reserved for emphasis rather than list structure.
+- [ ] ISC-64: For any source passage containing a named work, author, or other proper name, the generator emits the pair in both directions — name → claim and claim → name — with the claim → name card marked `kind = production`.
+- [ ] ISC-65: Measured by `recall metrics` over cards generated in the 30 days after the prompt change, fewer than 10% of backs contain `<li>` and fewer than 10% of fronts contain a coordinating conjunction.
+- [ ] ISC-66: A splitter tool lists every existing card whose back contains a list or whose front contains a coordinating conjunction, proposes a split into atomic cards, and writes nothing until the operator confirms that specific card.
+- [ ] ISC-67: Running the splitter with no confirmation leaves the card table byte-identical, proven by a checksum of the table before and after a dry run.
+
+### Study load
+
+- [ ] ISC-68: New-card and review-card daily study limits are separate per-user settings, enforced by the study queue rather than by the generator.
+- [ ] ISC-69: The generation limit and the study limits are distinct, separately labelled settings in the profile UI and in the account API, and changing one does not change the other.
+
+### Outcomes
+
+- [x] ISC-70: Antecedent: every card whose answer is a proper name, title, or other arbitrary label is `kind = production`, so the session cannot be completed without producing those answers unaided. This is the precondition for the experiential goal — the name arriving unprompted — and no downstream outcome claim is credible without it.
+- [ ] ISC-71: Sixty days after production cards ship, true retention measured by `recall metrics` lies between 75% and 90%. Above 95% means the instrument is still measuring recognition and the claim fails.
+- [ ] ISC-72: Over the same window, the share of reviews rated `Hard` is below 10%, and `Hard` predicts a subsequent `Again` at least twice as often as `Good` does — evidence that the middle button carries information rather than noise.
+- [ ] ISC-73: In a live unaided check over ten randomly drawn `production` cards whose answer is a title or proper name, at least eight are produced correctly before reveal.
+
+### Anti-criteria (memory fidelity)
+
+- [ ] Anti-7: FSRS parameters are NOT optimized against review history recorded before production cards shipped. No optimizer run, no weight file, no `RequestRetention` change in this work.
+- [ ] Anti-8: No automated process edits, splits, merges or deletes an existing card without explicit per-card operator confirmation.
+- [ ] Anti-9: No migration in this ISA alters an existing card's FSRS columns — proven by a full-column snapshot diff across each migration on a populated copy.
+- [ ] Anti-10: No frontend build step, bundler, or npm dependency is introduced.
+- [ ] Anti-11: `go test ./...` stays green, including the search, API-spec and auth suites from the prior run.
+- [ ] Anti-12: No study path serves a card belonging to another user, including the new filtered and leech paths.
+
 ## Test Strategy
 
 | isc | type | check | threshold | tool | anchors_to |
@@ -162,6 +264,52 @@ Semantic or vector search, embeddings, and any external search service — this 
 | Anti-4 | http+code | inspect account payload; grep for key logging | no key material either place | curl -i + Grep | Constraints |
 | Anti-5 | deploy | change model via API only, regenerate, compare container id before/after | model changed, container id identical | curl -i + ssh | principal_stated_goal |
 | Anti-6 | build | `go build ./...`, `go vet ./...`, `go test ./...` | all pass | bash | Principles |
+| ISC-36 | cli | run `recall metrics` against a populated copy | eight measures present, parseable | bash + go run | principal_stated_goal |
+| ISC-37 | cli | run twice, diff output | no difference | bash `cmp` | Principles |
+| ISC-38 | schema | apply migration on populated copy, read schema + column snapshot | column present, FSRS columns unchanged | sqlite3 + goose | Constraints |
+| ISC-39 | http | fetch study page for a production card, grep body for the back text | 0 occurrences | curl -i | Vision |
+| ISC-40 | unit | table test over accent/case/punctuation variants | every variant matches | go test | Principles |
+| ISC-41 | web/UI | submit a wrong answer, screenshot the answer view | Again pre-selected | Interceptor | Principles |
+| ISC-42 | http | diff served markup for a recognition card before/after the change | identical | curl + diff | Anti-2 |
+| ISC-43 | http | request the answer route without submitting | back not disclosed | curl -i | Principles |
+| ISC-44 | schema | apply migration on populated copy | column present | goose + sqlite3 | Constraints |
+| ISC-45 | unit | answer one card of a multi-card article, read siblings | siblings buried to next day boundary | go test | Problem |
+| ISC-46 | unit | queue query with a future and a past `buried_until` | excluded then included | go test | Problem |
+| ISC-47 | unit | snapshot all FSRS columns before/after a bury | identical | go test | Principles |
+| ISC-48 | web/UI | bury, then unbury from deck overview, resume study | cards served again | Interceptor | Vision |
+| ISC-49 | measurement | `recall metrics` after 30 days of use | same-day sibling share < 20% | SELECT | Goal |
+| ISC-50 | unit | sweep review seconds over one card state, with fuzz on and off | >1 interval on, exactly 1 off, all inside FUZZ_RANGES | go test | Problem |
+| ISC-74 | unit | queue with a learning card inside and outside the window | served inside, withheld outside, reviews never pulled forward | go test | Vision |
+| ISC-75 | unit | two Goods from New | state reaches Review, interval >= 1 day | go test | Constraints |
+| ISC-51 | unit | rate a review card `Again`, read next interval | < 24h | go test | Problem |
+| ISC-52 | web/UI | fail a card in a live session, continue studying | same card reappears | Interceptor | Vision |
+| ISC-53 | schema | full card-table column snapshot across restart | identical | sqlite3 + cmp | Constraints |
+| ISC-54 | schema | apply migration on populated copy | tag store present, many-to-many | goose + sqlite3 | Constraints |
+| ISC-55 | integration | generate cards from an article, read tags | tags present without manual step | go test | Vision |
+| ISC-56 | migration | run backfill on populated copy, count untagged | every card with article_id tagged; rest reported | SELECT | Problem |
+| ISC-57 | web/UI | build a session by tag and by min-lapses | correct set, cross-deck, own user only | Interceptor + SELECT | Vision |
+| ISC-58 | unit | snapshot rows, study a full no-reschedule session, snapshot again | identical | go test | Principles |
+| ISC-59 | unit | study a normal filtered session | rows updated, review_logs written | go test | Principles |
+| ISC-60 | web/UI | study a card at the leech threshold | flag visible | Interceptor | Problem |
+| ISC-61 | web/UI | open leech list from dashboard | list renders, three remedies present | Interceptor | Vision |
+| ISC-62 | unit | suspend a card, drive every study path | never served; unsuspend restores state | go test | Problem |
+| ISC-63 | file | read the prompt constant | states atomicity rules, no list mandate | Read + Grep | Problem |
+| ISC-64 | integration | generate from a passage naming a work | both directions emitted, reverse marked production | go test | Goal |
+| ISC-65 | measurement | `recall metrics` over the post-change generation window | both shares < 10% | SELECT | Goal |
+| ISC-66 | cli | run splitter against a populated copy | candidates listed, proposals shown | bash | Vision |
+| ISC-67 | cli | checksum card table before/after a dry run | identical | sqlite3 + cmp | Anti-8 |
+| ISC-68 | unit | exceed each limit independently | queue stops at the right count | go test | Problem |
+| ISC-69 | http | change each setting via the account API | the other is unchanged | curl -i | Problem |
+| ISC-70 | schema | classify answer types, count production cards among them | every proper-name answer is production | SELECT | Vision |
+| ISC-71 | measurement | `recall metrics` at day 60 | 75% ≤ retention ≤ 90% | SELECT | Goal |
+| ISC-72 | measurement | rating distribution + next-review-after-rating query | Hard < 10%; Hard→Again ≥ 2× Good→Again | SELECT | Goal |
+| ISC-73 | experiential | ten random production title cards, unaided, answers recorded before reveal | ≥ 8 produced | manual, logged | Vision |
+| Anti-7 | file+config | grep the scheduler and repo for optimizer/weight/retention changes | none present | Grep | Out of Scope |
+| Anti-8 | cli | drive every bulk tool without confirming | zero writes | sqlite3 checksum | Principles |
+| Anti-9 | schema | column snapshot diff per migration | identical FSRS columns | sqlite3 + cmp | Constraints |
+| Anti-10 | build | inspect repo for bundler/npm artefacts | none | Glob + Read | Constraints |
+| Anti-11 | test | `go test ./...` | green | go test | Constraints |
+| Anti-12 | http | drive every study path with a foreign card id | no disclosure | curl -i | Principles |
 
 ## Features
 
@@ -176,6 +324,16 @@ Semantic or vector search, embeddings, and any external search service — this 
 | model-settings-ui | `llm_model` field on `/profile` (GET render + POST persist) and in the account REST API (GET + PATCH) | ISC-29, ISC-30, Anti-4 | model-resolver | no |
 | model-deploy | Push to origin, rebuild and restart the NAS stack, set the working model, prove persistence across restart | ISC-31, ISC-35, Anti-5 | model-settings-ui | no |
 | flashcard-backfill | Generate the two pending Spanish flashcard sets against the live deployment | ISC-32, ISC-33 | model-deploy | no |
+| metrics-command | `recall metrics` reading the review log and card table, stable machine-readable output, runnable against any copy — the instrument every outcome claim is probed with | ISC-36, ISC-37 | — | no |
+| production-cards | `cards.kind` migration, typed-answer study view, server-side reveal, normalized comparison, diff display, rating pre-selection | ISC-38…ISC-43, ISC-70 | metrics-command | no |
+| bury-siblings | `buried_until` migration, bury-on-answer for same-article siblings, queue filter, unbury control | ISC-44…ISC-49 | — | yes (with production-cards) |
+| scheduler-honesty | `EnableFuzz` on, forced `EnableShortTerm=false` removed, same-session relearning proven end to end, no-rewrite proof | ISC-50…ISC-53 | — | yes (with bury-siblings) |
+| tags-and-filtered-study | tag store migration, auto-tagging on generation and sync, backfill, cross-deck filtered sessions by tag and lapses, no-reschedule mode | ISC-54…ISC-59 | — | no |
+| leech-detection | leech flag at threshold, `suspended` column, leech list with edit/delete/suspend remedies | ISC-60…ISC-62 | metrics-command | yes (with tags-and-filtered-study) |
+| atomic-generation | rewritten `DefaultFlashcardPrompt`, bidirectional pair emission for named things, confirm-first splitter for legacy cards with dry-run proof | ISC-63…ISC-67 | production-cards | no |
+| study-limits | separate new/review daily study limits enforced in the queue, relabelled distinctly from the generation limit | ISC-68, ISC-69 | — | yes (with atomic-generation) |
+| verify | migration rehearsal on a downloaded copy, browser pass through Interceptor, build/vet/test sweep, isolation sweep across the new paths | ISC-39, ISC-41, ISC-48, ISC-52, ISC-57, ISC-60, ISC-61, Anti-9…Anti-12 | all | no |
+| outcome-watch | scheduled `recall metrics` runs at day 30 and day 60 against a copy, plus the unaided ten-card check | ISC-49, ISC-65, ISC-71…ISC-73 | all | no |
 
 ## Decisions
 
@@ -191,6 +349,28 @@ Semantic or vector search, embeddings, and any external search service — this 
 - 2026-08-17 21:30: Three layers rather than one. An `LLM_MODEL` env var alone would technically satisfy "no redeploy" — the image never rebuilds, only `docker compose up -d` re-reads it — but it still costs an SSH session and a container recreation for what is a one-word change. A `users.llm_model` column edited from `/profile` makes the ordinary case a text field in a browser, and it reuses the exact pattern `flashcard_prompt` (migration 008) already established, so there is no new concept in the codebase. Env stays as the instance default for a fresh deploy; the compiled constant survives only as the last-resort fallback.
 - 2026-08-17 21:30: `LLM_API_URL` made configurable alongside the model, though nothing asked for it. The failure being fixed is "the provider changed something under us"; a retired *endpoint* or a move to another OpenAI-compatible provider is the same class of failure as a retired model, and the fix is one more `getEnv` line. Class-sweep, not scope creep.
 - 2026-08-17 21:30: Default model set to `openai/gpt-oss-120b`, read from Groq's live model list this session. The Llama 3.3 family is gone from production entirely, so this is a family change and not a version bump — worth recording, because the next break will look the same and the answer will be to change a text field rather than to read this file.
+- 2026-08-20 14:30: **refined:** this file's Goal moved from the search/reader/API run to the memory-fidelity work. The prior run's ISC-1…ISC-25 and Anti-1…Anti-3 are retained verbatim with their IDs and checkmarks as the record of current state, per the project-ISA rule that the file outlives any single run. ISC-13 and ISC-19 stay open.
+- 2026-08-20 14:30: The metrics command is built **first**, before any behaviour change. Four of the new claims are outcome claims stated as measured bands; without a repeatable instrument they would close on assertion. Building the instrument first also captures a pre-change baseline that the post-change numbers are compared against.
+- 2026-08-20 14:30: FSRS optimization and configurable desired retention pushed to Out of Scope rather than included. Optimizing against self-graded recognition data would lengthen intervals and deepen the defect; the optimizer only becomes safe after a sustained period of grading that registers failure. Recorded as Anti-7 so the exclusion is probeable rather than merely stated.
+- 2026-08-20 14:30: Typed-answer comparison **pre-selects** a rating rather than assigning one. Auto-grading would replace one bad instrument with another — a near-miss, a synonym, or a different valid phrasing are the learner's call. The system supplies the observation; the human keeps the verdict.
+- 2026-08-20 14:30: Reveal is enforced server-side (ISC-43) rather than by hiding the answer in the DOM. An answer present in the served HTML is an answer available to anyone who looks, which is precisely the failure mode production cards exist to remove.
+- 2026-08-20 14:30: Sibling burying keyed on `article_id`, which already exists on `cards`, rather than introducing a note/sibling model. Anki's siblings are cards of one note; Recall's de-facto siblings are cards generated from one article. Reusing the existing column gets the mechanism without a data model migration.
+- 2026-08-20 14:30: Legacy card cleanup kept in scope but strictly confirm-first, with a dry-run checksum proof (ISC-67, Anti-8). Cards accumulated over months are the operator's own writing; a bulk rewrite is not a refactor.
+- 2026-08-20 14:30: This file carries no operator usage statistics. `ISA.md` is tracked and the remote is public (`"visibility": "public"` from the GitHub API, checked this run), so measured personal behaviour — retention figures, study hours, per-deck counts — lives only in the private analysis, and this file states thresholds as product targets. The baseline the outcome claims compare against is captured by `recall metrics` at build time, not written here.
+- 2026-08-21 10:30: `EnableShortTerm = false` was not an oversight, and reverting it needed more than flipping the flag. `migrations/010_fix_stuck_learning.sql` exists because cards had accumulated in the Learning state and cycled, and switching to the long-term scheduler was the fix. That cure removed same-day relearning altogether. The pile-up is handled where it belongs instead — the queue serves cards mid-loop first and the loop provably terminates (ISC-74, ISC-75) — rather than by keeping a scheduler that cannot express failure. Recorded here because the next person to read that migration will otherwise think this change undoes a considered decision without knowing it was reconsidered.
+- 2026-08-21 10:30: Restoring short-term scheduling changes new cards too, not just failures: a new card rated Good now waits ten minutes and graduates on the second Good, instead of jumping straight to a multi-day interval. That is Anki's default and it is the in-session repetition the whole feature exists to restore, but it is a visible change to a daily habit and is called out rather than discovered.
+- 2026-08-21 10:30: Learn-ahead is a last resort, not a priority. The first cut ranked cards mid-loop above everything and a unit test caught it serving a card due in five minutes ahead of one due now. The ordering is three terms: actually-due before looked-ahead, then mid-loop before new before review, then due date. Studying ahead of the schedule is what spacing exists to prevent, so it may only fill an otherwise empty queue.
+- 2026-08-21 10:30: Learn-ahead covers learning and relearning states only. Reaching forward for a review card would be cramming with extra steps.
+- 2026-08-20 19:20: The card-kind migration is numbered **015, not 014**. The live database already had version 14 recorded as applied (2026-08-17) from a migration that is not in this tree. Reusing 014 would have been silently skipped by goose and the app would have started against a schema with no `kind` column. Found by rehearsing on a copy of the live database rather than on a fresh one — a fresh database would have applied 014 happily and told us nothing. Numbering a migration now means reading the deployed `goose_db_version`, not the files on disk.
+- 2026-08-20 19:20: The reveal gate is a session value, not a client-side flag. A production card's answer is withheld until the server has seen an attempt for that specific card, and grading it clears the mark so the next card has to be earned. A hidden field or a DOM class would be a suggestion; this is a gate.
+- 2026-08-20 19:20: `blockedAsProduction` returns `(handled bool, err error)` rather than an error alone. Echo's `c.String` returns nil on success, so an error-only guard wrote the 403 and then rendered the answer into the same response. The web test caught it; the signature now makes the mistake unavailable.
+- 2026-08-20 19:20: The kind switch lives in the existing edit form rather than on a new endpoint. The learner is already in that view when they decide a card should be produced rather than recognised, and an absent `kind` value leaves the card alone, so saving a wording fix never silently changes how a card is asked.
+- 2026-08-20 19:20: The typed answer is compared on a fold that drops case, diacritics and punctuation, and the diff shows the *stored* spelling for words the learner got right. Scoring a correct recall as a failure over a missing tilde would teach the learner to distrust the instrument, which is the one thing this feature cannot afford.
+- 2026-08-20 17:40: `recall metrics` computes the per-rating followup matrix that ISC-72 is stated in terms of. ISC-72 was written with no probe that could produce its number; rather than leave a claim that could only close on a hand-written query, the measure was folded into the instrument and ISC-36's wording extended to name it.
+- 2026-08-20 17:40: Day boundaries and hours use the requested zone rather than UTC. A session that runs past midnight local time belongs to the day the learner thinks it does, and the sibling-interference measure is about what happened in one sitting. This shifts the measure slightly against any UTC-based hand query — the tool's number is the definition from here on.
+- 2026-08-20 17:40: The review pass is computed in Go from one ordered query rather than in SQL with window functions. The hour histogram needs zone conversion in Go anyway, the followup matrix needs a per-card walk, and one ordered pass gives both without depending on which SQLite build `modernc.org/sqlite` happens to ship.
+- 2026-08-20 17:40: Conjunction matching covers `y`, `e` and `and` — coordination only. A disjunction ("X o Y") is usually one question offering alternatives rather than two questions in one card, so including it would inflate the measure with cards that are not malformed. Punctuation is flattened to spaces first so "X, y Z" counts.
+- 2026-08-20 14:30: Dead end considered and rejected — adding a "partially correct" fifth rating button to fix the un-failable-list problem. It would let a malformed card survive by making its failure expressible instead of removing the malformation, and FSRS has no fifth grade to map it to. The fix is atomic cards (ISC-63), not a richer excuse.
 
 ## Changelog
 
@@ -203,6 +383,21 @@ Semantic or vector search, embeddings, and any external search service — this 
   **refuted by**: the same screenshot — "acor**de**" lit up mid-word throughout, so the highlighting carried no signal.
   **learned**: the highlighter must model the same token boundaries the FTS tokenizer uses; FTS5 matches whole tokens (prefix-extended on the last one), so a highlight must begin a word.
   **criterion now**: ISC-9 requires matches to be anchored at word starts.
+
+- **conjectured**: a collection whose owner reports poor recall will show it in the data as a population of repeatedly-failed cards, so a leech counter is the high-value missing mechanism.
+  **refuted by**: the operator's own database — zero cards at or above the leech threshold, and a maximum lapse count far below it, in a collection its owner describes as not sticking.
+  **learned**: a leech detector counts failures, so it is blind in a system where failure is never registered. Self-graded recognition produces almost no `Again`, so no card ever accumulates lapses no matter how bad it is. Detection mechanisms are downstream of measurement mechanisms; ordering them the other way builds a counter that counts nothing.
+  **criterion now**: leech detection (ISC-60…ISC-62) is retained but sequenced after production cards, and the credibility of the whole set is gated on ISC-71's retention band rather than on a leech count.
+
+- **conjectured**: long, multi-fact card backs are harder, so they will show a higher failure rate than short ones, and back length will correlate with lapses.
+  **refuted by**: measurement across the collection — cards with list-structured backs were failed no more often than cards without, and the shortest cards showed the *highest* rate of `Again`-or-`Hard`, the opposite of the predicted direction.
+  **learned**: a card carrying five facts cannot be failed, only failed-partially, and no rating button expresses that — so the learner rates it as a partial success and the miss is never recorded. Short cards are the only ones whose outcome is binary, which is why they look harder. Card length does not raise the failure rate; it suppresses the failure *signal*, which is worse, because the scheduler then extends intervals on material that was not recalled.
+  **criterion now**: atomicity is specified as an instrument requirement (Principles: an instrument that cannot register failure is not an instrument) and probed by ISC-63 and ISC-65, rather than being justified by a difficulty correlation that does not exist.
+
+- **conjectured**: with fuzz enabled, two cards in identical state rated identically at the same instant will receive different due dates, so a batch generated together stops marching together.
+  **refuted by**: reading the library before writing the test — `go-fsrs` seeds its PRNG from `fmt.Sprintf("%d_%d_%f", now.Unix(), reps, difficulty*stability)`. Identical state at an identical second is an identical seed, so the fuzz is identical too. The claim was not merely unproven, it was false.
+  **learned**: fuzz disperses along the axes that actually differ between cards — review second, repetition count, and difficulty × stability — not along card identity. Two cards genuinely alike in all three are indistinguishable to the scheduler by construction, and after a card's first review no two cards stay alike in all three. The claim had assumed a mechanism the library never offered.
+  **criterion now**: ISC-50 asserts dispersion of the interval itself — a sweep of review seconds over one card state yields more than one distinct interval, all inside the library's documented `FUZZ_RANGES`, where the same sweep with fuzz off collapses to exactly one.
 
 ## Verification
 
@@ -295,3 +490,137 @@ Four states verified, two of them in viewed pixels:
 3. Cleared the field and saved: value empty, helper back to `openai/gpt-oss-120b`. State claim, checked by DOM read; its appearance is state 1, already seen.
 
 **Finding — the placeholder reads as a value.** `placeholder="openai/gpt-oss-120b"` renders dark enough in this theme that a viewed screenshot cannot distinguish "empty, following the instance default" from "explicitly pinned to gpt-oss-120b". Those two states mean different things: the second survives a change to `LLM_MODEL`, the first does not. Caught only because a DOM read contradicted what the pixels suggested. Not fixed this run.
+
+### Code audit — 2026-08-20
+
+The Problem section's claims were read out of the source this run, not recalled:
+
+- `internal/scheduler/scheduler.go` — `params := fsrs.DefaultParam()` followed by `params.EnableShortTerm = false`; nothing else is overridden.
+- `go-fsrs` v3.3.1 `parameters.go` — `DefaultParam()` sets `RequestRetention: 0.9`, `MaximumInterval: 36500`, `EnableShortTerm: true`, `EnableFuzz: false`. Recall therefore runs with fuzz off and short-term forced off.
+- `go-fsrs` v3.3.1 `fsrs_test.go` `TestLongTermScheduler` — with `EnableShortTerm = false`, the documented interval sequence for `Good`×6 then `Again`, `Again` is `{3, 11, 35, 101, 269, 669, 12, 2}`: a failed card at a 669-day interval returns in 12 days, and a second failure in 2. No sub-day interval exists in that mode.
+- `internal/services/review.go` `GetNextDue` — scoped to one `deck_id`, ordered `CASE WHEN state IN (0,1) THEN 0 ELSE 1 END ASC, due ASC`, with no limit, no bury filter and no suspend filter.
+- `migrations/001_init.sql` — `cards` carries `deck_id`, `front`, `back` and the FSRS columns only; no `tags`, `suspended`, `buried_until` or flag column exists in any migration through 013.
+- `internal/services/llm.go` — `DefaultFlashcardPrompt` contains five consecutive formatting rules mandating `<ul><li>` / `<ol><li>` structure and no atomicity rule.
+- `internal/services/cron.go` — a whole batch of cards per article is generated in one call and inserted via `CreateBatch`, so every card of an article shares a creation time and an initial due date.
+- `cmd/recall/main.go` — the only study route is `auth.GET("/decks/:id/study", …)`; there is no cross-deck or filtered study path.
+- `daily_card_limit` is read only by `internal/services/cron.go` and the profile/account handlers — it bounds generation, never the study queue.
+
+**Repository visibility, checked this run.** `GET https://api.github.com/repos/deleyva/recall` → 200 with `"private": false, "visibility": "public"`, and `git ls-files --error-unmatch ISA.md` confirms this file is tracked. That is why no measured operator behaviour appears anywhere above.
+
+### metrics-command — 2026-08-20
+
+**ISC-36 — the eight measures (nine with the followup matrix).** `internal/services/metrics.go` computes them; `recall metrics <email> [--json] [--tz <Zone>]` prints them. Fourteen tests in `internal/services/metrics_test.go` assert each measure against a hand-worked fixture, and every expected value is derived in a comment above its test so a failure points at the metric rather than at the fixture:
+
+```
+$ go test ./internal/services/ -run TestMetrics -v
+--- PASS: TestMetricsCorpusIsUserScoped
+--- PASS: TestMetricsTrueRetentionCountsOnlySpacedReviews
+--- PASS: TestMetricsRatingDistribution
+--- PASS: TestMetricsRatingFollowupPredictsNextAgain
+--- PASS: TestMetricsLeeches
+--- PASS: TestMetricsSiblingSameDayShare
+--- PASS: TestMetricsFormulationMarkers
+--- PASS: TestMetricsDeckDistributionIsOrdered
+--- PASS: TestMetricsHourHistogramUsesRequestedZone
+--- PASS: TestMetricsHourHistogramShiftsWithZone
+--- PASS: TestMetricsRenderIsByteIdenticalAcrossRuns
+--- PASS: TestMetricsJSONIsByteIdenticalAcrossRuns
+--- PASS: TestMetricsUnknownUserIsAnError
+--- PASS: TestMetricsEmptyCorpusDoesNotPanic
+ok  github.com/deleyva/recall/internal/services
+```
+
+Red before green: the same command against the test file with no implementation present failed to build with `undefined: Metrics`, `undefined: NewMetricsService`, `undefined: RatingFollowup`, `undefined: LeechThreshold`, `undefined: RenderMetrics`.
+
+User scoping is asserted rather than assumed — the fixture gives a second user a leech card with a list back and a compound front, and every count is checked to exclude it.
+
+**ISC-37 — byte identity.** Run twice against an unchanged populated copy of a real database, output redirected to two files:
+
+```
+$ cmp /tmp/p1.txt /tmp/p2.txt && echo IDENTICAL
+IDENTICAL (2370 bytes)
+```
+
+Two tests cover the same property at the unit level, for the text report and for the JSON form. The determinism is structural, not incidental: no timestamp is written into the report, the deck list is explicitly sorted by count then name, the hour histogram is a fixed 0..23 slice, and the rating rows are emitted by iterating 1..4 rather than a map.
+
+**Regression.** `go build ./...`, `go vet ./...` clean; `go test ./...` green across the API and services suites. `gofmt -l` reports no drift in the files this work touched.
+
+### production-cards — 2026-08-20
+
+**ISC-38 / Anti-9 — migration on a populated copy.** Rehearsed against a copy of the live database (477 cards), not a fresh one:
+
+```
+version before: 14 · cards: 477
+OK   015_card_kind.sql (442.38µs)
+goose: successfully migrated database to version: 15
+$ cmp before.txt after.txt      # all FSRS columns, all 477 cards
+IDENTICAL
+$ sqlite3 copy.db "SELECT kind, COUNT(*) FROM cards GROUP BY kind;"
+recognition|477
+$ sqlite3 copy.db "SELECT (SELECT COUNT(*) FROM search_index WHERE kind='flashcard'), (SELECT COUNT(*) FROM cards);"
+477|477
+```
+
+Every existing card defaults to recognition, no FSRS column moved, and the search index stayed one-to-one.
+
+**ISC-39 / ISC-41 / ISC-43 — real browser, real session** (local server, isolated Chrome profile via Interceptor):
+
+- ISC-39: on a production card's study page, `document.documentElement.innerHTML.includes('<the answer>')` → `false`, with the answer input present in the tree. The answer is not in the page at all.
+- ISC-41 miss: typed a wrong answer → screenshot shows the "Not produced" badge, the typed text, a word-level comparison (matched words green, the missing word underlined, the extra word struck through), and **Again carrying the pre-selection ring**, with all four grades still clickable.
+- ISC-41 hit: typed the answer without accents → "Produced" badge, comparison rendered in the stored spelling, and **Good carrying the ring**.
+- ISC-43: from the authenticated page, `fetch('/decks/…/study/<unattempted card>/answer')` → `403 | body: Type the answer before revealing this card. | leaks answer: false`.
+
+**ISC-40 / ISC-42 / ISC-70 — tests.** `internal/services/answercheck_test.go` covers the comparison across case, accents, punctuation, inner whitespace, stored HTML and entities, plus wrong/missing/extra/empty answers, the suggested rating either way, the diff statuses, and the stored-spelling rule. `internal/handlers/web/review_test.go` drives the handlers: the production view withholds the answer, the recognition view is unchanged (reveal button, no input, answer route still 200 with the answer), both bypass routes 403, the pre-selection ring appears on the right button and only there, the reveal is scoped to the attempted card and cleared by grading, and switching a card's kind moves no FSRS column and is refused for another user's card or an unknown value.
+
+```
+$ go test ./... 
+ok  github.com/deleyva/recall/internal/handlers/api
+ok  github.com/deleyva/recall/internal/handlers/web
+ok  github.com/deleyva/recall/internal/services
+```
+
+Red before green on both files: `undefined: CheckAnswer`, `undefined: RatingGood`, `undefined: RatingAgain` for the comparison, and the handler suite failing on the guard before it was fixed.
+
+**Regression.** `go build ./...` and `go vet ./...` clean, full suite green, and `gofmt` reports no drift introduced by these files.
+
+### scheduler-honesty — 2026-08-21
+
+**Red before green.** With the flags as they were, the new scheduler suite failed with the defect stated in its own output:
+
+```
+--- FAIL: TestFailingAReviewCardReturnsItWithinTheDay
+    Again scheduled the card 120h0m0s out, want a positive gap under 24h
+    state = 2, want relearning (3)
+--- FAIL: TestPreviewAgreesWithTheScheduler
+    Again previews "5d" — a day-scale interval means short-term scheduling is off
+--- FAIL: TestNewCardGraduatesAfterTwoGoods
+    after one Good state = 2, want learning (1)
+--- FAIL: TestFuzzDispersesLongIntervals
+    every interval came out identical ([179 179 179 … 179]) — fuzz is not applied
+```
+
+**ISC-50 / ISC-51 / ISC-75 — six scheduler tests green** after the change: a failed review card returns in minutes and in Relearning with its lapse counted, the button preview agrees with what the button does, a new card graduates to Review on the second Good with a multi-day interval, fuzz yields multiple distinct intervals all inside `FUZZ_RANGES`, the same sweep with fuzz off collapses to one, and constructing a scheduler alters no card.
+
+**ISC-74 — seven queue tests green**: a card due in three minutes is served; one beyond the window is not; a review card due in five minutes is never pulled forward; a card mid-loop precedes new cards; new still precedes review; a card actually due beats one merely looked ahead to; an empty queue stays empty. The count and the selection share one predicate, so a served card is never reported as "0 remaining".
+
+**ISC-52 — end to end in a real browser**, isolated profile, two review cards seeded at a 60-day interval:
+
+1. First card revealed — the rating row read `Again 5m · Hard 4mo · Good 13mo · Easy 38mo`. Before this change the same card previewed `Again 5d`.
+2. Pressed Again. The session moved on to the second card rather than ending.
+3. Graded the second card Good. The session served **the failed card again**, screenshotted at "1 remaining".
+4. Database after: the failed card is `state 3` (Relearning), `lapses 1`, `scheduled_days 0`, due in 4 minutes. The second card sits at 380 days.
+
+**ISC-53 — nothing rewritten.** All FSRS columns of a populated copy (477 cards) dumped before and after starting the server on the new configuration:
+
+```
+$ cmp pre-restart.txt post-restart.txt
+IDENTICAL (477 cards)
+```
+
+Existing cards keep the schedule they earned; the new behaviour applies from each card's next review.
+
+**Regression.** `go build ./...`, `go vet ./...` clean; all four test packages green.
+
+### Remaining criteria
+
+ISC-44…ISC-49, ISC-54…ISC-69 and ISC-71…ISC-73, plus Anti-7/5/7/8/9, are unbuilt. No evidence exists for them and none is claimed.

@@ -12,9 +12,23 @@ type Scheduler struct {
 	fsrs *fsrs.FSRS
 }
 
+// New builds the scheduler Recall studies with.
+//
+// EnableShortTerm stays at the library default (on). It was forced off, and
+// migration 010 exists because that change was made to stop cards piling up in
+// the Learning state — but the cure removed same-day relearning entirely: a
+// failed card came back in days, so the first effortful re-retrieval, the moment
+// recognition becomes production, never happened inside a session. The pile-up
+// is handled where it belongs instead: the study queue serves due learning cards
+// first and offers them slightly ahead of time (services.LearnAheadWindow), and
+// the loop provably terminates — two Goods graduate a new card to Review.
+//
+// EnableFuzz is on. Without it, cards created together and rated alike keep
+// identical intervals forever, so a batch generated from one article marches
+// through the schedule as a block for years.
 func New() *Scheduler {
 	params := fsrs.DefaultParam()
-	params.EnableShortTerm = false
+	params.EnableFuzz = true
 	return &Scheduler{
 		fsrs: fsrs.NewFSRS(params),
 	}

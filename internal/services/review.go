@@ -16,28 +16,54 @@ func NewReviewService(db *sql.DB) *ReviewService {
 	return &ReviewService{db: db}
 }
 
-func (s *ReviewService) GetNextDue(deckID string) (*models.Card, int, error) {
-	now := time.Now().UTC().Format(time.RFC3339)
+// LearnAheadWindow is how far ahead the queue will reach for a card that is
+// mid-loop. A card failed two minutes ago is due in five; without this the
+// session would end and the re-retrieval that makes the failure worth anything
+// would never happen. Anki calls the same idea the learn-ahead limit.
+const LearnAheadWindow = 20 * time.Minute
 
-	// Count total due
+// queuePredicate selects what the session may serve: anything already due, plus
+// learning and relearning cards close enough to be worth finishing now. Review
+// cards are never pulled forward — studying ahead of the schedule is exactly
+// what the spacing is there to prevent.
+const queuePredicate = `
+	deck_id = ?
+	AND (
+		due <= ?
+		OR (state IN (1, 3) AND due <= ?)
+	)`
+
+// queueOrder ranks by three terms. A card that is actually due always beats one
+// merely reached for by learn-ahead, so studying ahead stays a last resort
+// rather than a shortcut past the schedule. Within each of those groups, cards
+// mid-loop come first — they are time-sensitive, and a failed card left behind
+// the new-card backlog never resurfaces before the session ends — then new
+// cards, then reviews, each by due date.
+const queueOrder = `
+	ORDER BY
+		CASE WHEN due <= ? THEN 0 ELSE 1 END ASC,
+		CASE WHEN state IN (1, 3) THEN 0 WHEN state = 0 THEN 1 ELSE 2 END ASC,
+		due ASC`
+
+func (s *ReviewService) GetNextDue(deckID string) (*models.Card, int, error) {
+	nowTime := time.Now().UTC()
+	now := nowTime.Format(time.RFC3339)
+	ahead := nowTime.Add(LearnAheadWindow).Format(time.RFC3339)
+
 	var dueCount int
-	s.db.QueryRow("SELECT COUNT(*) FROM cards WHERE deck_id = ? AND due <= ?", deckID, now).Scan(&dueCount)
+	s.db.QueryRow("SELECT COUNT(*) FROM cards WHERE"+queuePredicate, deckID, now, ahead).Scan(&dueCount)
 
 	if dueCount == 0 {
 		return nil, 0, nil
 	}
 
-	// Get next due card: new/learning first (state 0,1), then review/relearning (state 2,3)
 	row := s.db.QueryRow(`
 		SELECT id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days,
 			reps, lapses, state, last_review, created_at, updated_at, article_id, kind
 		FROM cards
-		WHERE deck_id = ? AND due <= ?
-		ORDER BY
-			CASE WHEN state IN (0, 1) THEN 0 ELSE 1 END ASC,
-			due ASC
+		WHERE`+queuePredicate+queueOrder+`
 		LIMIT 1
-	`, deckID, now)
+	`, deckID, now, ahead, now)
 
 	card, err := scanCardRow(row)
 	if err != nil {

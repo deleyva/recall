@@ -5,11 +5,11 @@ project: recall
 effort: E4
 effort_source: gate-floor
 phase: build
-progress: 54/119
+progress: 59/119
 iteration: 3
 mode: interactive
 started: 2026-08-20T14:30:00Z
-updated: 2026-08-22T09:00:00Z
+updated: 2026-08-22T15:10:00Z
 principal_stated_goal: "usando los datos del artículo, crea un ISA o completa/reelabora el existente para indroducir las novedades que marca el artículo, para cerrar la brecha entre ANKI/Buenas prácticas y Recall"
 principal_stated_goal_source: prompt
 principal_stated_goal_signal: 4
@@ -168,11 +168,11 @@ Also excluded: changing the FSRS library version or upgrading to FSRS-5/6; a con
 
 ### Sibling burying
 
-- [ ] ISC-44: Migration adds `cards.buried_until` (nullable timestamp) and applies cleanly on a populated copy.
-- [ ] ISC-45: Answering a card that has a non-null `article_id` sets `buried_until` to the next local day boundary for every other card of that article that is currently due and unanswered today.
-- [ ] ISC-46: `GetNextDue` excludes any card whose `buried_until` is in the future, and includes it again once that timestamp has passed.
-- [ ] ISC-47: Burying a card changes no FSRS column — a row snapshot of `due`, `stability`, `difficulty`, `elapsed_days`, `scheduled_days`, `reps`, `lapses`, `state`, `last_review` before and after a bury is identical.
-- [ ] ISC-48: Deck overview offers an unbury control that clears `buried_until` for that deck, and after using it the previously buried cards are served again in the same session.
+- [x] ISC-44: Migration adds `cards.buried_until` (nullable timestamp) and applies cleanly on a populated copy.
+- [x] ISC-45: Answering a card that has a non-null `article_id` sets `buried_until` to the next local day boundary for every other card of that article that is currently due and unanswered today — **except cards in learning or relearning**, which are never buried. *(tightened mid-run — see Decisions)*
+- [x] ISC-46: `GetNextDue` excludes any card whose `buried_until` is in the future, and includes it again once that timestamp has passed. Every other count of due cards — deck list, deck overview, dashboard stats, the `due_only` card API — excludes them too, or the number promises work the queue will not serve. *(widened mid-run — see Decisions)*
+- [x] ISC-47: Burying a card changes no FSRS column — a row snapshot of `due`, `stability`, `difficulty`, `elapsed_days`, `scheduled_days`, `reps`, `lapses`, `state`, `last_review` before and after a bury is identical.
+- [x] ISC-48: Deck overview offers an unbury control that clears `buried_until` for that deck, and after using it the previously buried cards are served again in the same session.
 - [ ] ISC-49: Measured by `recall metrics` over the 30 days following deployment, the share of reviews falling on the same day as a sibling of the same article is below 20%.
 
 ### Scheduler honesty
@@ -491,7 +491,20 @@ control covers the single fix.
 - 2026-08-22 09:00: ISC-100 is written so a negative result closes it. Faces on a dithered 16-grey panel may simply not be recognisable, in which case art-history study belongs on the tablet and the e-ink device stays for text. Recording that is the finding; a criterion that can only be satisfied by success would hide it.
 - 2026-08-22 09:00: The reported dark-mode defect is recorded as a **candidate** diagnosis, not a confirmed one. Reading `study_answer_partial.html:36` and `base.html:23-25` explains both an unreadable back and silently unstyled lists, but a UI defect closes on a reproduction, not on code inspection. The reproduction is the first step of run 4, not a conclusion of this session.
 
+- 2026-08-22 15:10: Migration numbered **016**, and the numbering was taken from the deployed `goose_db_version` rather than the files on disk — the rule 015 cost us. The deploy log of 2026-08-21 records `successfully migrated database to version: 15`, so 016 is the next free slot. The rehearsal staged a copy to 15 first and applied only 016 against it, which is the transition the live instance will actually perform; a straight `goose up` from 13 would have proven something else.
+- 2026-08-22 15:10: **Learning and relearning cards are never buried**, which tightens ISC-45 from "every other card of that article that is currently due". The naive reading kills the feature that shipped two days earlier: a card failed minutes ago is due in five, ISC-74's learn-ahead window is what brings it back inside the session, and burying it until tomorrow would delete exactly that re-retrieval. Anki draws the same line — its interday-learning-sibling burying is off by default. Caught in design rather than by a failing probe, so a test locks it in place (`TestBurySiblingsLeavesLearningAndRelearningAlone`).
+- 2026-08-22 15:10: The bury filter went into **every** count of due cards, not just the study queue — deck list, deck overview, dashboard `DueToday`, and the `due_only` card API. A "Study (5)" button that opens onto an empty session is a worse defect than no burying at all, because it breaks the number the learner uses to decide whether to sit down. Five sites, enumerated by one grep for `due <= ?`.
+- 2026-08-22 15:10: Burying does not touch `updated_at`, not just the FSRS columns. Answering one card would otherwise restamp every sibling as edited, and `updated_at` is the field that says a human changed the content. Burying changes what the queue shows, and nothing else.
+- 2026-08-22 15:10: Siblings are scoped by article and by **owner**, not by deck. A card the learner moved to another of their own decks is still generated from the same article and still primes the answer; a write path scoped only by article would reach across users. `BurySiblings` takes `userID` and filters on deck ownership, matching the `...ForUser` idiom the rest of `CardService` already uses.
+- 2026-08-22 15:10: The day boundary is the next **local** midnight, resolved through `time.Local` — the same zone convention `recall metrics` established for its day boundaries and hour histogram. No new configuration: the container's `TZ` sets it, as it already does for metrics. `time.Date` with an overflowing day normalizes the month and resolves the offset in the zone, so the DST transition moves the boundary instead of breaking it (proven for Europe/Madrid's October change).
+- 2026-08-22 15:10: The unbury control is a plain form POST that redirects, not an HTMX swap. It changes what the whole page says — the study count, the banner, the button — so re-rendering the page is the honest response, and it leaves the deck page working without JavaScript.
+
 ## Changelog
+
+- **conjectured**: the unreadable green on a card back in dark mode is `study_answer_partial.html`'s `text-green-700 dark:text-white` losing its `dark:` override, and the list CSS in `base.html` keyed on `.dark .text-green-400 ul` means list markers vanish from card backs in dark mode too.
+  **refuted by**: opening the answer view in dark mode in a real browser against a running instance — the back renders **white**, and a `<ul>` back renders with visible bullets and indentation. Both halves of the diagnosis are false for the current code.
+  **learned**: the `dark:` variant does win (Tailwind orders variants after base utilities), and the list CSS matches because the element keeps its unprefixed `text-green-700` class in both themes. Reading the classes explained a defect that the running page does not have. This is the fourth time in this file that code inspection produced a confident wrong answer; the rule that a UI defect closes on a reproduction is not a formality.
+  **criterion now**: run 4's palette work does not start from this diagnosis. The reported green is still real and still unlocated — twelve green utilities across the templates carry no `dark:` override at all — so the first step of run 4 is to have the principal name the screen, then reproduce it there.
 
 - **conjectured**: a snippet anchored on the first match in the body is the useful excerpt.
   **refuted by**: the live `/search?q=acordes de septima` screenshot — the excerpt centred on "de" inside the Wikipedia nav chrome and said nothing about séptima chords, because "de" is the first term to appear.
@@ -754,6 +767,59 @@ Pushed to `main`; CI ran `go vet ./... && go test ./...`, built and published
 Note on the four criteria stated as measured bands: they are deliberately not
 closed here. They compare a window of behaviour after the change against the
 baseline above, and there is no such window yet.
+
+### bury-siblings — 2026-08-22
+
+**ISC-44 / Anti-9 — migration on a populated copy.** A copy of a real populated
+database was staged to version 15 — the version the deployed instance reports —
+so the rehearsal performs the same transition the live instance will:
+
+```
+start version: 13
+staged to version: 15
+after up: 16
+after second up: 16          (idempotent)
+buried_until NULL on 11 of 11 existing cards
+PRAGMA table_info(cards) → 17|buried_until|TEXT|0||0
+index → idx_cards_buried_until
+```
+
+FSRS columns snapshotted before and after the 015→016 step and diffed:
+`IDENTICAL — no FSRS column moved`. The copy carries 11 cards, so this proves
+the mechanism, not scale; the production-copy rehearsal is still owed at deploy
+time under the Constraint, and the startup log is the live confirmation.
+
+**ISC-45 / ISC-46 / ISC-47 / ISC-48 — Go tests.** Nine tests across
+`internal/services/bury_test.go` and `internal/handlers/web/bury_test.go`:
+burying hides due siblings and not the answered card; learning and relearning
+siblings are left alone; burying stops at the article, at not-yet-due cards, and
+at the owner, while reaching a sibling the learner moved to another of their own
+decks; a full FSRS-column snapshot is identical across a bury; the queue skips a
+buried card and serves it again once the timestamp passes; unbury is scoped to
+the deck and the owner and the cards are served again; the day boundary is local
+midnight across month ends and the Europe/Madrid DST change. `go test ./...`
+green, `go vet ./...` clean, `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build`
+still produces the binary.
+
+**ISC-45 / ISC-46 / ISC-48 — end to end in a real browser.** A local instance on
+a copy of the database, three cards generated from one article, all due, driven
+through Interceptor:
+
+- Deck page before: `Study (3)`, no held-back banner.
+- Studied the first card, rated Good → the session answered **All done!** rather
+  than serving the primed sibling next.
+- Database after that one rating: the answered card `buried_until` NULL, both
+  siblings `2026-08-22T22:00:00Z` — 2026-08-23 00:00 in Europe/Madrid, the local
+  boundary, not a fixed 24 hours.
+- Deck page after: `Study` button gone, banner reads *"2 held back until
+  tomorrow — they come from articles you already studied today"* with a
+  **Study them now** control. Screenshot viewed in light and dark themes.
+- Clicked it → redirect to the deck page, `Study (2)`, both `buried_until` back
+  to NULL, and reopening the session served `SIBLING TWO`.
+
+**Not closed here.** ISC-49 is a 30-day measurement of the same-day-sibling share
+against a target under 20%. There is no window yet, and the mechanism shipping is
+not the outcome.
 
 ### Remaining criteria
 

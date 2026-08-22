@@ -25,9 +25,12 @@ const LearnAheadWindow = 20 * time.Minute
 // queuePredicate selects what the session may serve: anything already due, plus
 // learning and relearning cards close enough to be worth finishing now. Review
 // cards are never pulled forward — studying ahead of the schedule is exactly
-// what the spacing is there to prevent.
+// what the spacing is there to prevent. A buried sibling is skipped until its
+// timestamp passes; burying changes only what the queue shows, never when the
+// scheduler thinks the card is due.
 const queuePredicate = `
 	deck_id = ?
+	AND (buried_until IS NULL OR buried_until <= ?)
 	AND (
 		due <= ?
 		OR (state IN (1, 3) AND due <= ?)
@@ -51,7 +54,7 @@ func (s *ReviewService) GetNextDue(deckID string) (*models.Card, int, error) {
 	ahead := nowTime.Add(LearnAheadWindow).Format(time.RFC3339)
 
 	var dueCount int
-	s.db.QueryRow("SELECT COUNT(*) FROM cards WHERE"+queuePredicate, deckID, now, ahead).Scan(&dueCount)
+	s.db.QueryRow("SELECT COUNT(*) FROM cards WHERE"+queuePredicate, deckID, now, now, ahead).Scan(&dueCount)
 
 	if dueCount == 0 {
 		return nil, 0, nil
@@ -59,11 +62,11 @@ func (s *ReviewService) GetNextDue(deckID string) (*models.Card, int, error) {
 
 	row := s.db.QueryRow(`
 		SELECT id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days,
-			reps, lapses, state, last_review, created_at, updated_at, article_id, kind
+			reps, lapses, state, last_review, created_at, updated_at, article_id, kind, buried_until
 		FROM cards
 		WHERE`+queuePredicate+queueOrder+`
 		LIMIT 1
-	`, deckID, now, ahead, now)
+	`, deckID, now, now, ahead, now)
 
 	card, err := scanCardRow(row)
 	if err != nil {
@@ -94,12 +97,14 @@ func (s *ReviewService) GetStats(userID string) (*models.Stats, error) {
 		WHERE d.user_id = ?
 	`, userID).Scan(&stats.TotalCards)
 
-	// Due today
+	// Due today. Buried cards are excluded: a number the study queue will not
+	// honour is a number that lies.
 	s.db.QueryRow(`
 		SELECT COUNT(*) FROM cards c
 		JOIN decks d ON c.deck_id = d.id
 		WHERE d.user_id = ? AND c.due <= ?
-	`, userID, now).Scan(&stats.DueToday)
+		  AND (c.buried_until IS NULL OR c.buried_until <= ?)
+	`, userID, now, now).Scan(&stats.DueToday)
 
 	// Streak (consecutive days with reviews)
 	stats.Streak = s.calculateStreak(userID)

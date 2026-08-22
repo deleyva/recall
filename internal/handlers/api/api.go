@@ -330,6 +330,13 @@ func (h *Handler) SubmitStudyReview(c echo.Context) error {
 	h.cards.UpdateFSRS(&updatedCard)
 	h.reviews.CreateLog(reviewLog.CardID, reviewLog.Rating, reviewLog.ScheduledDays, reviewLog.ElapsedDays, reviewLog.State)
 
+	// Same sibling burying the web study flow does. Two study surfaces, one
+	// rule: a review here has to hide the batch too, or the API is a way to
+	// study around the mechanism.
+	if _, err := h.cards.BurySiblings(req.CardID, userID, now, time.Local); err != nil {
+		c.Logger().Errorf("bury siblings for card %s: %v", req.CardID, err)
+	}
+
 	// Get next card
 	nextCard, dueCount, _ := h.reviews.GetNextDue(deckID)
 

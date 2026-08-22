@@ -213,6 +213,13 @@ func (h *ReviewHandler) SubmitReview(c echo.Context) error {
 	// Save review log
 	h.reviews.CreateLog(reviewLog.CardID, reviewLog.Rating, reviewLog.ScheduledDays, reviewLog.ElapsedDays, reviewLog.State)
 
+	// Hide the rest of this article's batch until tomorrow. A failed bury costs
+	// the learner a primed sibling, not the review they just gave, so it must
+	// not take the answer down with it.
+	if _, err := h.cards.BurySiblings(cardID, userID, now, time.Local); err != nil {
+		c.Logger().Errorf("bury siblings for card %s: %v", cardID, err)
+	}
+
 	// The next card has to be earned on its own.
 	h.clearRevealed(c)
 
@@ -277,6 +284,23 @@ func (h *ReviewHandler) StudyDeleteCard(c echo.Context) error {
 	}
 
 	return h.renderNextCardOrDone(c.Response(), deckID)
+}
+
+// UnburyDeck clears every bury in the deck. Burying is a default, not a
+// verdict: a learner who wants the whole batch now — cramming before a class,
+// finishing a topic in one sitting — gets it back with one click, and the cards
+// return carrying the exact schedule they left with.
+func (h *ReviewHandler) UnburyDeck(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	deckID := c.Param("id")
+
+	if _, err := h.decks.Get(userID, deckID); err != nil {
+		return c.Redirect(http.StatusSeeOther, "/")
+	}
+	if _, err := h.cards.UnburyDeck(deckID, userID); err != nil {
+		return err
+	}
+	return c.Redirect(http.StatusSeeOther, "/decks/"+deckID)
 }
 
 func (h *ReviewHandler) StatsPage(c echo.Context) error {

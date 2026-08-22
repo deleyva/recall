@@ -19,7 +19,8 @@ type Deck struct {
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
 	CreatedAt   time.Time `json:"created_at"`
-	DueCount    int       `json:"due_count,omitempty"` // computed field
+	DueCount    int       `json:"due_count,omitempty"`    // computed field
+	BuriedCount int       `json:"buried_count,omitempty"` // computed field
 }
 
 type Article struct {
@@ -85,6 +86,10 @@ type Card struct {
 	LastReview    time.Time `json:"last_review"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
+	// BuriedUntil hides the card from the study queue until the timestamp
+	// passes. It is presentation state: nil means not buried, and nothing in
+	// the bury path writes an FSRS column.
+	BuriedUntil *time.Time `json:"buried_until,omitempty"`
 }
 
 type ReviewLog struct {

@@ -262,7 +262,7 @@ func (s *ArticleService) Delete(userID, articleID string) error {
 func (s *ArticleService) GetCardsForArticle(articleID string) ([]models.Card, error) {
 	rows, err := s.db.Query(`
 		SELECT id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days,
-			reps, lapses, state, last_review, created_at, updated_at, article_id, kind
+			reps, lapses, state, last_review, created_at, updated_at, article_id, kind, buried_until
 		FROM cards WHERE article_id = ?
 		ORDER BY created_at ASC
 	`, articleID)

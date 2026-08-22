@@ -106,7 +106,7 @@ func (s *CardService) List(deckID string, page, perPage int) ([]models.Card, int
 
 	rows, err := s.db.Query(`
 		SELECT id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days,
-			reps, lapses, state, last_review, created_at, updated_at, article_id, kind
+			reps, lapses, state, last_review, created_at, updated_at, article_id, kind, buried_until
 		FROM cards WHERE deck_id = ?
 		ORDER BY created_at DESC
 		LIMIT ? OFFSET ?
@@ -149,8 +149,9 @@ func (s *CardService) ListForUser(userID, deckID, articleID string, dueOnly bool
 		args = append(args, articleID)
 	}
 	if dueOnly {
-		where += " AND c.due <= ?"
-		args = append(args, time.Now().UTC().Format(time.RFC3339))
+		now := time.Now().UTC().Format(time.RFC3339)
+		where += " AND c.due <= ? AND (c.buried_until IS NULL OR c.buried_until <= ?)"
+		args = append(args, now, now)
 	}
 
 	var total int
@@ -162,7 +163,7 @@ func (s *CardService) ListForUser(userID, deckID, articleID string, dueOnly bool
 
 	rows, err := s.db.Query(`
 		SELECT c.id, c.deck_id, c.front, c.back, c.due, c.stability, c.difficulty, c.elapsed_days,
-			c.scheduled_days, c.reps, c.lapses, c.state, c.last_review, c.created_at, c.updated_at, c.article_id, c.kind
+			c.scheduled_days, c.reps, c.lapses, c.state, c.last_review, c.created_at, c.updated_at, c.article_id, c.kind, c.buried_until
 		FROM cards c JOIN decks d ON c.deck_id = d.id
 		WHERE `+where+`
 		ORDER BY c.created_at DESC
@@ -187,7 +188,7 @@ func (s *CardService) ListForUser(userID, deckID, articleID string, dueOnly bool
 func (s *CardService) Get(cardID string) (*models.Card, error) {
 	row := s.db.QueryRow(`
 		SELECT id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days,
-			reps, lapses, state, last_review, created_at, updated_at, article_id, kind
+			reps, lapses, state, last_review, created_at, updated_at, article_id, kind, buried_until
 		FROM cards WHERE id = ?
 	`, cardID)
 	return scanCardRow(row)
@@ -197,7 +198,7 @@ func (s *CardService) Get(cardID string) (*models.Card, error) {
 func (s *CardService) GetForUser(cardID, userID string) (*models.Card, error) {
 	row := s.db.QueryRow(`
 		SELECT c.id, c.deck_id, c.front, c.back, c.due, c.stability, c.difficulty, c.elapsed_days, c.scheduled_days,
-			c.reps, c.lapses, c.state, c.last_review, c.created_at, c.updated_at, c.article_id, c.kind
+			c.reps, c.lapses, c.state, c.last_review, c.created_at, c.updated_at, c.article_id, c.kind, c.buried_until
 		FROM cards c
 		JOIN decks d ON c.deck_id = d.id
 		WHERE c.id = ? AND d.user_id = ?
@@ -261,6 +262,79 @@ func (s *CardService) SetKindForUser(cardID, userID, kind string) error {
 		return fmt.Errorf("card not found")
 	}
 	return nil
+}
+
+// nextDayBoundary is the next local midnight after now. Burying is scoped to
+// "not again today", and the day the learner means is the one on their own
+// clock — the same definition `recall metrics` uses for its day boundaries.
+// time.Date normalizes the day overflow and resolves the offset in loc, so a
+// DST transition moves the boundary rather than breaking it.
+func nextDayBoundary(now time.Time, loc *time.Location) time.Time {
+	local := now.In(loc)
+	return time.Date(local.Year(), local.Month(), local.Day()+1, 0, 0, 0, 0, loc)
+}
+
+// BurySiblings hides the other cards generated from the same article until the
+// next local day boundary, and returns how many it hid. Siblings share
+// retrieval cues: answering the first one primes the rest, so a batch studied
+// back to back measures priming rather than memory.
+//
+// Three restrictions matter more than the mechanism:
+//
+//   - Learning and relearning cards (state 1 and 3) are never buried. A card
+//     failed minutes ago is due in five, and burying it would delete the
+//     same-session re-retrieval that ISC-51 and ISC-74 exist to restore. Anki
+//     draws the same line: interday learning siblings are left alone by
+//     default.
+//   - Only cards already due are buried. A card due next week is not competing
+//     for this session and does not need hiding.
+//   - Only cards in decks owned by userID are touched. A write path is a place
+//     to leak just as much as a read path is.
+//
+// It writes buried_until and nothing else — not even updated_at. Burying is
+// presentation, not a change to the card.
+func (s *CardService) BurySiblings(cardID, userID string, now time.Time, loc *time.Location) (int, error) {
+	boundary := nextDayBoundary(now, loc).UTC().Format(time.RFC3339)
+	nowStr := now.UTC().Format(time.RFC3339)
+
+	result, err := s.db.Exec(`
+		UPDATE cards SET buried_until = ?
+		WHERE id != ?
+		  AND article_id IS NOT NULL
+		  AND article_id = (SELECT article_id FROM cards WHERE id = ?)
+		  AND deck_id IN (SELECT id FROM decks WHERE user_id = ?)
+		  AND state NOT IN (1, 3)
+		  AND due <= ?
+		  AND (buried_until IS NULL OR buried_until < ?)
+	`, boundary, cardID, cardID, userID, nowStr, boundary)
+	if err != nil {
+		return 0, fmt.Errorf("bury siblings: %w", err)
+	}
+	buried, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("bury siblings: %w", err)
+	}
+	return int(buried), nil
+}
+
+// UnburyDeck clears every bury in one deck, so a learner who wants the whole
+// batch now can have it. Like burying, it touches no FSRS column: the cards
+// come back with exactly the schedule they had.
+func (s *CardService) UnburyDeck(deckID, userID string) (int, error) {
+	result, err := s.db.Exec(`
+		UPDATE cards SET buried_until = NULL
+		WHERE deck_id = ?
+		  AND deck_id IN (SELECT id FROM decks WHERE user_id = ?)
+		  AND buried_until IS NOT NULL
+	`, deckID, userID)
+	if err != nil {
+		return 0, fmt.Errorf("unbury deck: %w", err)
+	}
+	unburied, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("unbury deck: %w", err)
+	}
+	return int(unburied), nil
 }
 
 func (s *CardService) Delete(cardID string) error {
@@ -358,11 +432,17 @@ type scannable interface {
 func scanCardFromRow(s scannable) (*models.Card, error) {
 	var c models.Card
 	var due, lastReview, createdAt, updatedAt string
-	var articleID *string
+	var articleID, buriedUntil *string
 	err := s.Scan(&c.ID, &c.DeckID, &c.Front, &c.Back, &due, &c.Stability, &c.Difficulty,
-		&c.ElapsedDays, &c.ScheduledDays, &c.Reps, &c.Lapses, &c.State, &lastReview, &createdAt, &updatedAt, &articleID, &c.Kind)
+		&c.ElapsedDays, &c.ScheduledDays, &c.Reps, &c.Lapses, &c.State, &lastReview, &createdAt, &updatedAt,
+		&articleID, &c.Kind, &buriedUntil)
 	if err != nil {
 		return nil, fmt.Errorf("scan card: %w", err)
+	}
+	if buriedUntil != nil {
+		if t, err := time.Parse(time.RFC3339, *buriedUntil); err == nil {
+			c.BuriedUntil = &t
+		}
 	}
 	c.Due, _ = time.Parse(time.RFC3339, due)
 	c.LastReview, _ = time.Parse(time.RFC3339, lastReview)

@@ -280,6 +280,7 @@ func main() {
 	auth.PUT("/decks/:id/study/:cardID", reviewHandler.StudyUpdateCard)
 	auth.DELETE("/decks/:id/study/:cardID", reviewHandler.StudyDeleteCard)
 	auth.POST("/decks/:id/study", reviewHandler.SubmitReview)
+	auth.POST("/decks/:id/unbury", reviewHandler.UnburyDeck)
 	auth.GET("/search", searchHandler.SearchPage)
 	auth.GET("/search/results", searchHandler.SearchResults)
 	auth.GET("/to-read", articleHandler.ListPage)

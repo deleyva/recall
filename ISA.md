@@ -5,15 +5,16 @@ project: recall
 effort: E4
 effort_source: gate-floor
 phase: build
-progress: 54/87
+progress: 54/119
 iteration: 3
 mode: interactive
 started: 2026-08-20T14:30:00Z
-updated: 2026-08-21T12:20:00Z
+updated: 2026-08-22T09:00:00Z
 principal_stated_goal: "usando los datos del artículo, crea un ISA o completa/reelabora el existente para indroducir las novedades que marca el artículo, para cerrar la brecha entre ANKI/Buenas prácticas y Recall"
 principal_stated_goal_source: prompt
 principal_stated_goal_signal: 4
 principal_stated_goal_locked: 2026-08-20T14:30:00Z
+queued_runs: "run 4 legibility/palette/e-ink — ISC-76…ISC-85, Anti-13, Anti-14 · run 5 card media — ISC-86…ISC-101, Anti-15…Anti-18. Both specified, neither started; execution gated on run 3 reaching 87/87."
 prior_run: "20260809-193403_recall-search-reader-api — ISC-1…ISC-25, Anti-1…Anti-3 (complete) · 20260817-193000_recall-llm-model-runtime-config — ISC-26…ISC-35, Anti-4…Anti-6 (complete)"
 context_sufficient: true
 interview_invoked: false
@@ -25,7 +26,9 @@ interview_invoked: false
 > already satisfies (with evidence) plus the claims that do not hold yet.
 > ISC IDs are stable and never renumbered. ISC-1…ISC-25 belong to the search /
 > reader / API run, ISC-26…ISC-35 to the runtime LLM-model run; both record
-> current state. ISC-36 onward is the memory-fidelity work.
+> current state. ISC-36…ISC-75 is the memory-fidelity work, in progress.
+> ISC-76…ISC-85 and ISC-86…ISC-101 are specified but not started — see
+> `queued_runs` in the frontmatter for the gate.
 >
 > **This file is public** (`github.com/deleyva/recall`). No operator usage statistics,
 > no host, user, port or absolute home paths — thresholds here are product targets,
@@ -55,7 +58,9 @@ You open a session and Recall makes you say it. The title, the name, the definit
 
 **FSRS parameter optimization on pre-change review history.** Optimizing a memory model against inflated self-grades produces longer intervals and amplifies the exact failure this work exists to fix. The optimizer is a later run, gated on a sustained period of honest grading — not part of this one.
 
-Also excluded: changing the FSRS library version or upgrading to FSRS-5/6; a configurable desired-retention setting (same gating reason as the optimizer); image occlusion; audio/TTS on cards; mobile native apps; a spaced-repetition algorithm of our own; multi-user sharing of decks or tags; any frontend build step; semantic search or embeddings; automated rewriting or deletion of existing cards without per-card human confirmation.
+Also excluded: changing the FSRS library version or upgrading to FSRS-5/6; a configurable desired-retention setting (same gating reason as the optimizer); image occlusion; mobile native apps; a spaced-repetition algorithm of our own; multi-user sharing of decks or tags; any frontend build step; semantic search or embeddings; automated rewriting or deletion of existing cards without per-card human confirmation.
+
+**Out of scope for the memory-fidelity run, in scope as queued work.** Card media — images and audio — was excluded here on 2026-08-20 and is now specified as run 5 (ISC-86…ISC-101). It stays out of *this* run: it needs its own migration against the same `cards` table that sibling burying, tags and leech still have to touch, and interleaving two schema fronts is how migration numbering collides. Image occlusion remains excluded outright (Anti-17). Text-to-speech remains excluded: run 5 stores clips the operator supplies and synthesizes nothing.
 
 ## Principles
 
@@ -223,6 +228,65 @@ Also excluded: changing the FSRS library version or upgrading to FSRS-5/6; a con
 - [ ] Anti-11: `go test ./...` stays green, including the search, API-spec and auth suites from the prior run.
 - [ ] Anti-12: No study path serves a card belonging to another user, including the new filtered and leech paths.
 
+### Legibility, palette and e-ink *(queued — run 4; not started. Goal: "me gustaría que fuera una aplicación minimalista en la que los colores fueran algo pastel y se viese lo mejor posible en un dispositivo de tinta electrónica con mucho contraste")*
+
+Target device is an Android e-ink tablet with a real browser, so the app is
+rendered on the panel rather than exported to it. The two halves of the request
+pull against each other — pastels are high-value, low-saturation colours, and a
+16-level grayscale panel collapses them into two or three indistinguishable
+greys — so the resolving rule is stated as a principle rather than a palette:
+colour is never the only channel that carries meaning. Once every state also
+differs in value, weight, border or label, the pastels are free, because they
+are decoration.
+
+- [ ] ISC-76: Every colour on the study surface — base layout, `study.html`, and the four study partials — comes from a named token declared in one place; no template in that set names a Tailwind palette colour directly (`text-green-700`, `bg-gray-800`, `dark:text-white`). Falsifier: a grep for palette-colour classes over that file set returns a hit.
+- [ ] ISC-77: The same holds for every remaining template. The grep is repo-wide and returns nothing; the three themes are defined only in the token block.
+- [ ] ISC-78: Every foreground/background token pair used for text meets WCAG AA — 4.5:1 for body, 3:1 for large — in all three themes, proven by a computed contrast report over the token table rather than by eye. A pastel is admissible as a surface or an accent, never as text on another pastel.
+- [ ] ISC-79: The card back renders in the same token as body text in every theme. There is no colour that means "this is the answer". This is the defect that opened the run: `study_answer_partial.html` renders the back as `text-green-700 dark:text-white`, and green 700 on the dark card surface is roughly 1.9:1.
+- [ ] ISC-80: Lists inside card fronts and backs render with visible markers and indentation in all three themes. Today the list CSS in `base.html` is keyed on the colour classes that carry the text (`.text-green-700 ul`, `.dark .text-green-400 ul`), so a card back that is white in dark mode matches neither selector and loses its bullets — exactly the material the generator produces most of.
+- [ ] ISC-81: Rendered at 16 levels of grey, the study page, the answer page and the dashboard keep every state distinguishable: Produced vs Not produced, the four rating buttons, due vs buried, flagged vs not. Each is carried by a label or a shape as well as a hue. Falsifier: two states that are one grey apart and share their text.
+- [ ] ISC-82: E-ink is a third selectable theme, not dark mode with adjustments. In e-ink mode the served CSS contains no `transition`, no `animation`, no `box-shadow`, and no text rendered below full opacity; HTMX swaps replace content without a fade.
+- [ ] ISC-83: In e-ink mode every interactive control has a hit area of at least 48×48 CSS px and a solid border of at least 1px. A ghost button — colour fill with no outline — is invisible on the panel.
+- [ ] ISC-84: Verified on the device: a full card cycle — front, typed answer, comparison, the four ratings — photographed on the e-ink tablet, every element legible, nothing depending on a partial refresh that leaves ghosting where the answer will appear.
+- [ ] ISC-85: The chosen theme applies before first paint in all three cases and survives a reload and a stack restart. The current inline script covers dark only.
+
+### Card media — images and audio *(queued — run 5; not started. Goal: "me gustaría añadir las capacidades que tiene Anki de añadir audios o de añadir imágenes... si vas a estudiar Historia del Arte o la cara de la gente de la que hablas")*
+
+Media is the input side of a mechanism that already exists rather than a new
+pillar. A painting, a face or a musical phrase is arbitrary-label material, and
+ISC-70 already requires arbitrary labels to be `production` cards — so an image
+on the front with a typed name behind the reveal gate is the production card of
+ISC-38…ISC-43 fed a different prompt. The generator cannot produce a picture or
+a clip, so every media card is authored by hand; both authoring routes are in
+scope, because a bulk folder covers preparing a teaching unit and a per-card
+control covers the single fix.
+
+- [ ] ISC-86: Migration adds a `media` table — content-addressed by SHA-256, scoped by `user_id`, carrying mime, byte length and the bytes — and applies cleanly on a populated copy, altering no FSRS column and no existing card row.
+- [ ] ISC-87: Media is referenced inline from the existing card fields as `<img src="/media/:id">` and `<audio src="/media/:id">`. No new column on `cards`, so media composes unchanged with production cards, search indexing, the card editor, sibling burying and the splitter.
+- [ ] ISC-88: Field HTML is sanitized on render against a tag and attribute allowlist rather than passed through `safeHTML`. For every input in a hostile-input table — `<script>`, `<svg onload>`, `<img onerror>`, a `javascript:` source, a `data:` source, an external `http://` source — the rendered output is inert.
+- [ ] ISC-89: Upload accepts JPEG, PNG, WebP, MP3, M4A and OGG and nothing else, decided by sniffing the stored bytes rather than by the declared content type or the filename. SVG is rejected, because an SVG is a script container.
+- [ ] ISC-90: Images are decoded and re-encoded server-side to a bounded maximum dimension in pure Go, and the stored bytes are the re-encoded ones. The uploaded original is never persisted.
+- [ ] ISC-91: Per-file size caps are enforced before the bytes reach the database, and a request over the cap is refused without the whole body being buffered.
+- [ ] ISC-92: `GET /media/:id` serves the stored bytes with the stored mime, `X-Content-Type-Options: nosniff`, and a long cache lifetime, which is safe because the id is the content hash. Requesting another user's media id returns 404 and discloses nothing — including whether the id exists.
+- [ ] ISC-93: Identical bytes uploaded twice produce one row. A painting used on ten cards is stored once.
+- [ ] ISC-94: The card editor offers attach-image and attach-audio controls on both front and back; the control uploads and inserts the reference where the cursor is.
+- [ ] ISC-95: A bulk import command reads a directory and proposes one card per file — front is the media reference, back is the filename stem with separators normalized — reporting the whole set and writing nothing until the operator confirms.
+- [ ] ISC-96: A card whose front is an image defaults to `kind = production`, and the typed-answer comparison of ISC-40 works against it unchanged.
+- [ ] ISC-97: Audio plays from an explicit control, never on load. Where the audio *is* the answer it sits behind the same server-side reveal gate as ISC-43 — a request that skips the submit step cannot obtain the clip.
+- [ ] ISC-98: A garbage-collection command lists media no card references any more and deletes nothing until confirmed; the dry run leaves the media table byte-identical, proven by a checksum before and after.
+- [ ] ISC-99: Restoring from the backup artifact alone reproduces every card's media. Whatever the backup covers today must still be everything after this run — the blind spot being closed is that media stored outside the database would make the existing backup silently partial.
+- [ ] ISC-100: An image card is answerable on the e-ink panel — ten real art-history images studied on the device, the result recorded whatever it is. A negative result is the finding, not a failure to report: dithered grayscale may not carry a face.
+- [ ] ISC-101: `recall metrics` reports media cards and their retention separately from text cards, so the claim that pictures help is measured rather than assumed.
+
+### Anti-criteria (queued runs)
+
+- [ ] Anti-13: No frontend build step, bundler or npm dependency is introduced by the palette work. The three themes are Tailwind Play CDN configuration plus a token block.
+- [ ] Anti-14: The palette refactor changes presentation only — the diff across every template touches `class` and `style` attributes and nothing else. No `hx-` attribute, target, route or form field changes.
+- [ ] Anti-15: No cgo. Image decoding, resizing and encoding stay pure Go, and `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build` still produces the deploy binary.
+- [ ] Anti-16: No media path accepts or serves another user's row.
+- [ ] Anti-17: Image occlusion is NOT built. Static images and audio clips only.
+- [ ] Anti-18: No media byte is written outside the database. There is exactly one artifact to back up, as there is today.
+
 ## Test Strategy
 
 | isc | type | check | threshold | tool | anchors_to |
@@ -310,6 +374,38 @@ Also excluded: changing the FSRS library version or upgrading to FSRS-5/6; a con
 | Anti-10 | build | inspect repo for bundler/npm artefacts | none | Glob + Read | Constraints |
 | Anti-11 | test | `go test ./...` | green | go test | Constraints |
 | Anti-12 | http | drive every study path with a foreign card id | no disclosure | curl -i | Principles |
+| ISC-76 | file | grep the study surface for Tailwind palette-colour classes | zero hits | Grep | principal_stated_goal |
+| ISC-77 | file | same grep, repo-wide over templates | zero hits | Grep | principal_stated_goal |
+| ISC-78 | computed | contrast ratio over every text token pair, three themes | ≥ 4.5:1 body, ≥ 3:1 large | script + token table | Principles |
+| ISC-79 | file+browser | read the back's token, then screenshot the answer view in each theme | back token == body token | Read + Interceptor | principal_stated_goal |
+| ISC-80 | browser | render a card back containing `<ul>` and `<ol>` in each theme | markers and indent visible in all three | Interceptor | Problem |
+| ISC-81 | browser | screenshot study, answer and dashboard, reduce to 16 greys | every state still distinguishable | Interceptor + convert | principal_stated_goal |
+| ISC-82 | http | fetch the page in e-ink mode, scan the served CSS | no transition/animation/shadow, no faded text | curl + grep | principal_stated_goal |
+| ISC-83 | browser | measure every control's box in e-ink mode | ≥ 48×48 px, border ≥ 1px | Interceptor | principal_stated_goal |
+| ISC-84 | experiential | full card cycle on the e-ink tablet, photographed | every element legible | device, photo logged | principal_stated_goal |
+| ISC-85 | browser | load each theme cold, reload, restart the stack | no flash, choice preserved | Interceptor | principal_stated_goal |
+| ISC-86 | schema | `goose up` on a copy, then column snapshot diff | table exists, FSRS columns identical | sqlite3 + cmp | Constraints |
+| ISC-87 | schema | inspect `cards` after the migration | no new column | sqlite3 | Principles |
+| ISC-88 | unit | hostile-input table through the sanitizer | every case inert | go test | Principles |
+| ISC-89 | unit+http | upload each allowed and disallowed type, plus a renamed SVG | allowlist decided by bytes | go test + curl | Principles |
+| ISC-90 | unit | upload an oversized image, read back the stored bytes | re-encoded, bounded, original absent | go test | Constraints |
+| ISC-91 | http | POST a body over the cap | refused, not buffered whole | curl -i | Constraints |
+| ISC-92 | http | fetch own media, then another user's id | 200 with nosniff; 404 | curl -i | Principles |
+| ISC-93 | unit | upload identical bytes twice | one row | go test | principal_stated_goal |
+| ISC-94 | browser | attach an image and a clip from the editor, front and back | reference inserted, card renders | Interceptor | principal_stated_goal |
+| ISC-95 | cli | run the importer against a folder without confirming | proposal printed, zero writes | sqlite3 checksum | Anti-8 |
+| ISC-96 | http | create an image-front card, study it | kind is production, comparison works | curl -i + Interceptor | ISC-70 |
+| ISC-97 | http | request the answer of an audio-answer card without submitting | clip not served | curl -i | ISC-43 |
+| ISC-98 | cli | dry-run the media GC | table checksum identical | sqlite3 + cmp | Anti-8 |
+| ISC-99 | restore | restore the backup artifact into a clean instance | every card's media present | docker + browser | Constraints |
+| ISC-100 | experiential | ten art-history image cards on the e-ink device | result recorded either way | device, logged | Vision |
+| ISC-101 | cli | `recall metrics` on a copy with media cards | media split reported | recall metrics | Principles |
+| Anti-13 | build | inspect the repo for bundler/npm artefacts | none | Glob + Read | Constraints |
+| Anti-14 | diff | `git diff` over the palette commit, filtered by attribute | only class/style hunks | git diff | Principles |
+| Anti-15 | build | `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build` | binary produced | go build | Constraints |
+| Anti-16 | http | every media path with a foreign id | no disclosure | curl -i | Principles |
+| Anti-17 | file | grep the repo for occlusion code | none present | Grep | Out of Scope |
+| Anti-18 | file | inspect the container volume after uploads | no media file on disk | docker exec + ls | Constraints |
 
 ## Features
 
@@ -334,6 +430,15 @@ Also excluded: changing the FSRS library version or upgrading to FSRS-5/6; a con
 | study-limits | separate new/review daily study limits enforced in the queue, relabelled distinctly from the generation limit | ISC-68, ISC-69 | — | yes (with atomic-generation) |
 | verify | migration rehearsal on a downloaded copy, browser pass through Interceptor, build/vet/test sweep, isolation sweep across the new paths | ISC-39, ISC-41, ISC-48, ISC-52, ISC-57, ISC-60, ISC-61, Anti-9…Anti-12 | all | no |
 | outcome-watch | scheduled `recall metrics` runs at day 30 and day 60 against a copy, plus the unaided ten-card check | ISC-49, ISC-65, ISC-71…ISC-73 | all | no |
+| design-tokens | Three-theme token block in `base.html` (light, dark, eink) wired through the Play CDN config, then the study surface converted off raw palette classes | ISC-76, ISC-78, ISC-79, ISC-80, Anti-13, Anti-14 | run 3 complete | no |
+| theme-sweep | The remaining templates converted to tokens; theme selector, persistence, and pre-paint application for all three | ISC-77, ISC-85 | design-tokens | no |
+| eink-mode | E-ink theme: motion and shadow stripped, hit areas and borders enlarged, HTMX swaps made flat | ISC-82, ISC-83 | design-tokens | no |
+| legibility-verify | Grayscale reduction pass, contrast report over the token table, on-device photographed card cycle; also closes the long-deferred ISC-13 and ISC-19 | ISC-81, ISC-84, ISC-13, ISC-19 | theme-sweep, eink-mode | no |
+| media-store | `media` table migration, content-addressed dedup, pure-Go re-encode, size caps, allowlist by byte sniffing, user-scoped serving with nosniff | ISC-86, ISC-89…ISC-93, Anti-15, Anti-16, Anti-18 | run 3 complete | yes (with design-tokens) |
+| field-sanitizer | Allowlist sanitizer replacing bare `safeHTML` on card fields, admitting `img` and `audio` and nothing dangerous | ISC-87, ISC-88 | media-store | no |
+| media-authoring | Attach controls in the card editor, bulk folder importer with confirm-first proposal, media GC dry-run | ISC-94, ISC-95, ISC-98 | field-sanitizer | no |
+| media-study | Image fronts default to production, typed comparison unchanged, audio behind an explicit control and behind the reveal gate when it is the answer | ISC-96, ISC-97 | field-sanitizer | no |
+| media-verify | Backup restore proof, on-device image legibility check, metrics split for media cards | ISC-99…ISC-101, Anti-17 | media-authoring, media-study | no |
 
 ## Decisions
 
@@ -371,6 +476,20 @@ Also excluded: changing the FSRS library version or upgrading to FSRS-5/6; a con
 - 2026-08-20 17:40: The review pass is computed in Go from one ordered query rather than in SQL with window functions. The hour histogram needs zone conversion in Go anyway, the followup matrix needs a per-card walk, and one ordered pass gives both without depending on which SQLite build `modernc.org/sqlite` happens to ship.
 - 2026-08-20 17:40: Conjunction matching covers `y`, `e` and `and` — coordination only. A disjunction ("X o Y") is usually one question offering alternatives rather than two questions in one card, so including it would inflate the measure with cards that are not malformed. Punctuation is flattened to spaces first so "X, y Z" counts.
 - 2026-08-20 14:30: Dead end considered and rejected — adding a "partially correct" fifth rating button to fix the un-failable-list problem. It would let a malformed card survive by making its failure expressible instead of removing the malformation, and FSRS has no fifth grade to map it to. The fix is atomic cards (ISC-63), not a richer excuse.
+
+
+- 2026-08-22 09:00: Two new goals recorded — a minimalist pastel palette that reads on an e-ink panel, and Anki-style image and audio on cards — and **queued rather than started**. Run 3 stands at 54 of its criteria closed, and everything still open in it (sibling burying, tags, leech and suspend, the splitter) needs migrations against a live populated database. Media needs its own migration and touches the same `cards` table and the same study templates. One person alternating two schema fronts is where migration numbering collides, which is the failure migration 015 was renumbered to avoid two days ago. Criteria are written now so the work is specified while the reasoning is fresh; execution waits for 87/87.
+- 2026-08-22 09:00: The e-ink target is a real Android e-ink tablet with a browser, not an export format. That makes the criteria verifiable on the device (ISC-84, ISC-100) rather than by simulation, and it makes e-ink a third runtime theme rather than a print stylesheet.
+- 2026-08-22 09:00: "Pastel" and "maximum contrast on e-ink" are opposing targets and are resolved by a principle rather than by a compromise palette. Pastels are high-value, low-saturation colours; a 16-level grayscale panel maps them onto two or three indistinguishable greys. So colour is never the only channel: every state carries a label, a border, a weight or a shape as well as a hue (ISC-81). Under that rule the pastels cost nothing, because they are decoration, and the panel loses no information.
+- 2026-08-22 09:00: The palette is centralized into tokens (ISC-76, ISC-77) rather than fixed where it hurts. The reported defect — the card back unreadable in dark mode — exists because 156 `dark:` utilities are scattered across 19 templates with no single place that defines what a surface or a body colour is. Patching the one div would leave the same class of bug live everywhere else, and the contrast claim would stay uncheckable. Anti-14 keeps that refactor honest by requiring the diff to touch presentation attributes only.
+- 2026-08-22 09:00: The answer text gets no colour of its own (ISC-79). A dedicated "answer green" is a colour carrying meaning, which the e-ink rule forbids, and it was never doing work that position and a rule above it were not already doing.
+- 2026-08-22 09:00: Media is referenced inline from the existing card fields rather than given columns on `cards` (ISC-87). Anki does the same thing, and it is what makes media compose for free with production cards, search, the editor, burying and the splitter instead of requiring each of them to learn about a new attachment concept.
+- 2026-08-22 09:00: Media bytes live in the database, not on a volume (Anti-18). The whole application is one SQLite file today, and that is what the backup covers. Files on disk would make the existing backup silently partial — the worst failure mode available, because nothing reports it until a restore. A single-user collection of a few hundred images and clips is tens of megabytes; SQLite carries that without complaint, and ISC-99 proves the restore.
+- 2026-08-22 09:00: Uploads force a sanitizer onto the card fields (ISC-88). They are rendered today through `safeHTML`, which was tolerable while the only writers were the LLM and the operator. An upload path plus `<img>` and `<audio>` in field HTML makes an allowlist necessary, and SVG is refused outright (ISC-89) because an SVG is a script container wearing an image extension.
+- 2026-08-22 09:00: Both authoring routes are built rather than one. A per-card attach control is the wrong shape for thirty paintings in a Baroque unit, and a folder importer is the wrong shape for fixing one card — and the importer is the cheaper of the two, since the filename is already the answer.
+- 2026-08-22 09:00: Image cards default to `production` (ISC-96) rather than being a new card kind. A painting, a face or a musical phrase is arbitrary-label material, and ISC-70 already requires arbitrary labels to be produced. Media is the input side of a mechanism that shipped in run 3, not a pillar of its own.
+- 2026-08-22 09:00: ISC-100 is written so a negative result closes it. Faces on a dithered 16-grey panel may simply not be recognisable, in which case art-history study belongs on the tablet and the e-ink device stays for text. Recording that is the finding; a criterion that can only be satisfied by success would hide it.
+- 2026-08-22 09:00: The reported dark-mode defect is recorded as a **candidate** diagnosis, not a confirmed one. Reading `study_answer_partial.html:36` and `base.html:23-25` explains both an unreadable back and silently unstyled lists, but a UI defect closes on a reproduction, not on code inspection. The reproduction is the first step of run 4, not a conclusion of this session.
 
 ## Changelog
 

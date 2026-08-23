@@ -9,7 +9,7 @@ progress: 62/119
 iteration: 3
 mode: interactive
 started: 2026-08-20T14:30:00Z
-updated: 2026-08-23T12:00:00Z
+updated: 2026-08-23T13:30:00Z
 principal_stated_goal: "usando los datos del artículo, crea un ISA o completa/reelabora el existente para indroducir las novedades que marca el artículo, para cerrar la brecha entre ANKI/Buenas prácticas y Recall"
 principal_stated_goal_source: prompt
 principal_stated_goal_signal: 4
@@ -186,8 +186,8 @@ Also excluded: changing the FSRS library version or upgrading to FSRS-5/6; a con
 
 ### Tags and filtered study
 
-- [ ] ISC-54: Migration adds a tag store allowing many tags per card, with `::` hierarchy expressed in the tag name, and applies cleanly on a populated copy.
-- [ ] ISC-55: Cards created by the flashcard generator and by the Readeck sync are tagged automatically from their source article, so tags accumulate with no manual step.
+- [ ] ISC-54: Migration adds a tag store allowing many tags per card, storing each tag as a normalized `key` plus its display form, shaped `dominio/tema` at a fixed depth of two with the first segment drawn from a closed list, and applies cleanly on a populated copy. *(restated 2026-08-23 — the `::` free-depth hierarchy was refuted; see Changelog)*
+- [ ] ISC-55: Cards created by the flashcard generator and by the Readeck sync are tagged automatically from their source article, so tags accumulate with no manual step. The generator picks the domain from the closed list and may not invent a first segment — a tag store nobody types into cannot drift.
 - [ ] ISC-56: A backfill assigns at least one tag, derived from the source article, to every existing card that has an `article_id`; cards without one are reported rather than silently skipped.
 - [ ] ISC-57: A study session can be built from a tag filter, a minimum-lapses filter, or both, spanning every deck the user owns, and it never serves another user's card.
 - [ ] ISC-58: A filtered session offers a no-reschedule mode; studying a full session in that mode leaves `due`, `stability`, `difficulty`, `state`, `reps` and `lapses` unchanged for every card served, verified by a row snapshot before and after.
@@ -348,7 +348,7 @@ control covers the single fix.
 | ISC-51 | unit | rate a review card `Again`, read next interval | < 24h | go test | Problem |
 | ISC-52 | web/UI | fail a card in a live session, continue studying | same card reappears | Interceptor | Vision |
 | ISC-53 | schema | full card-table column snapshot across restart | identical | sqlite3 + cmp | Constraints |
-| ISC-54 | schema | apply migration on populated copy | tag store present, many-to-many | goose + sqlite3 | Constraints |
+| ISC-54 | schema | apply migration on populated copy; insert two tags differing only in accents and case | tag store present, many-to-many; the two collapse to one key | goose + sqlite3 | Constraints |
 | ISC-55 | integration | generate cards from an article, read tags | tags present without manual step | go test | Vision |
 | ISC-56 | migration | run backfill on populated copy, count untagged | every card with article_id tagged; rest reported | SELECT | Problem |
 | ISC-57 | web/UI | build a session by tag and by min-lapses | correct set, cross-deck, own user only | Interceptor + SELECT | Vision |
@@ -506,7 +506,16 @@ control covers the single fix.
 - 2026-08-23 12:00: Suspended leeches stay **on** the leech list. The list is where the learner decides what to do about a bad card, and a card taken out of rotation is still a card that needs rewriting or deleting — dropping it from the list would turn suspension into a way to forget the problem rather than park it.
 - 2026-08-23 12:00: The empty leech list explains why it is empty. Zero is the expected reading for a while: a leech counter counts failures, and failures only started being registered when production cards shipped three days ago. A bare "nothing here" would read as "your cards are fine", which is precisely the false reassurance the refuted leech-detector conjecture in the Changelog is about.
 
+- 2026-08-23 13:00: The tag vocabulary is governed by a standard written outside this repo — `LIFEOS/RULES/Tagging.md` — because the same drift recurs across the principal's other surfaces (the Knowledge Archive, Obsidian, Readeck) and a rule that lives in one project's ISA cannot govern the others. This ISA takes a dependency on it: ISC-54 and ISC-55 are restated in its terms.
+- 2026-08-23 13:00: Recall's exposure to tag drift is **structurally near zero**, and noticing that is what unblocked the feature. ISC-55 already says tags are derived from the source article rather than typed, so no human types a tag here. Drift is a property of open vocabularies with human writers; a generator constrained to a closed root cannot produce `agents` one day and `agentes` the next. The standard matters most where the principal types — which is not this application.
+- 2026-08-23 13:00: Tags are stored as a normalized `key` alongside the display form, not as one string. Two tags with the same key are the same tag, which is the whole of the orthographic fix, and it has to live in the schema rather than in a validator so that no write path can bypass it.
+
 ## Changelog
+
+- **conjectured**: an Anki-style `::` hierarchy of free depth expressed in the tag name is the right shape for the tag store (ISC-54 as originally written).
+  **refuted by**: measuring the principal's existing vocabulary in the Knowledge Archive — 84 notes carrying 61 distinct tags, 29 of them used exactly once. The singletons are not obscure topics; they are the same topics at different depths and in two languages: `agents` beside `agentes`, `architecture` beside `arquitectura`, `deploy`/`docker`/`vps`/`ssh`/`infraestructura` for one subject, and `musica`/`guitarra`/`compositor`/`cancion`/`rock` flattened across five levels of granularity.
+  **learned**: free depth is a drift generator, not a drift remedy. A hierarchy of unbounded depth offers infinitely many defensible places to file one idea, and every additional level multiplies them, so the `::` was going to reproduce inside Recall exactly the vocabulary the archive already demonstrates. Depth has to be fixed before hierarchy helps at all. Three distinct failure modes were being treated as one — orthographic, lexical and granularity drift — and each needs a different mechanism: a normalized key, an alias table, and a fixed depth respectively.
+  **criterion now**: ISC-54 requires a normalized `key` plus a display form, at a fixed depth of two, with the first segment drawn from a closed list; ISC-55 forbids the generator from inventing a first segment. The reasoning and the audit tool live in `LIFEOS/RULES/Tagging.md`.
 
 - **conjectured**: the unreadable green on a card back in dark mode is `study_answer_partial.html`'s `text-green-700 dark:text-white` losing its `dark:` override, and the list CSS in `base.html` keyed on `.dark .text-green-400 ul` means list markers vanish from card backs in dark mode too.
   **refuted by**: opening the answer view in dark mode in a real browser against a running instance — the back renders **white**, and a `<ul>` back renders with visible bullets and indentation. Both halves of the diagnosis are false for the current code.

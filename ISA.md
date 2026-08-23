@@ -5,11 +5,11 @@ project: recall
 effort: E4
 effort_source: gate-floor
 phase: build
-progress: 59/119
+progress: 62/119
 iteration: 3
 mode: interactive
 started: 2026-08-20T14:30:00Z
-updated: 2026-08-22T15:10:00Z
+updated: 2026-08-23T12:00:00Z
 principal_stated_goal: "usando los datos del artículo, crea un ISA o completa/reelabora el existente para indroducir las novedades que marca el artículo, para cerrar la brecha entre ANKI/Buenas prácticas y Recall"
 principal_stated_goal_source: prompt
 principal_stated_goal_signal: 4
@@ -195,9 +195,9 @@ Also excluded: changing the FSRS library version or upgrading to FSRS-5/6; a con
 
 ### Leech detection
 
-- [ ] ISC-60: A card reaching the leech threshold (8 lapses) is flagged, and the flag is visible on the card during study.
-- [ ] ISC-61: A leech list is reachable from the dashboard and offers, per card, the three documented remedies: edit the card, delete it, or suspend it.
-- [ ] ISC-62: Migration adds `cards.suspended`; a suspended card is never served by any study path — deck, filtered, or otherwise — and unsuspending restores it with its FSRS state untouched.
+- [x] ISC-60: A card reaching the leech threshold (8 lapses) is flagged, and the flag is visible on the card during study — on the question and on the answer, so the learner sees it before deciding to attempt it again.
+- [x] ISC-61: A leech list is reachable from the dashboard and offers, per card, the three documented remedies: edit the card, delete it, or suspend it.
+- [x] ISC-62: Migration adds `cards.suspended`; a suspended card is never served by any study path — deck, filtered, or otherwise — nor counted by any due count, and unsuspending restores it with its FSRS state untouched. *(widened mid-run — see Decisions)*
 
 ### Atomic formulation
 
@@ -498,6 +498,13 @@ control covers the single fix.
 - 2026-08-22 15:10: Siblings are scoped by article and by **owner**, not by deck. A card the learner moved to another of their own decks is still generated from the same article and still primes the answer; a write path scoped only by article would reach across users. `BurySiblings` takes `userID` and filters on deck ownership, matching the `...ForUser` idiom the rest of `CardService` already uses.
 - 2026-08-22 15:10: The day boundary is the next **local** midnight, resolved through `time.Local` — the same zone convention `recall metrics` established for its day boundaries and hour histogram. No new configuration: the container's `TZ` sets it, as it already does for metrics. `time.Date` with an overflowing day normalizes the month and resolves the offset in the zone, so the DST transition moves the boundary instead of breaking it (proven for Europe/Madrid's October change).
 - 2026-08-22 15:10: The unbury control is a plain form POST that redirects, not an HTMX swap. It changes what the whole page says — the study count, the banner, the button — so re-rendering the page is the honest response, and it leaves the deck page working without JavaScript.
+
+- 2026-08-23 12:00: Reaching the threshold **flags** the card; it does not suspend it. Anki auto-suspends at eight lapses, and this system does not, because the standing rule is that anything touching the learner's own cards proposes and waits. Auto-suspension silently removes material the learner may still need and gives no signal that it happened — the failure mode the leech mechanism exists to end, reproduced one level up.
+- 2026-08-23 12:00: `LeechThreshold` and `IsLeech()` live in `models`, not `services`. The study templates ask a card whether it is a leech, and a template cannot reach into the services package; putting the number anywhere else would mean a second copy of the number in the template.
+- 2026-08-23 12:00: Suspension went into **every** due count as well as the study queue — deck list, deck overview, dashboard `DueToday`, the `due_only` card API — the same five sites the bury filter went into a day earlier. Second instance of the same class in two days, so the sweep is now the default move for any column that hides a card.
+- 2026-08-23 12:00: Suspended cards are **excluded from sibling burying and from the held-back count**. Burying a card that nothing serves writes a column no path reads, and counting it as "held back until tomorrow" over-reports the banner with cards that are not coming back tomorrow at all. The two hiding mechanisms have to know about each other or the numbers drift.
+- 2026-08-23 12:00: Suspended leeches stay **on** the leech list. The list is where the learner decides what to do about a bad card, and a card taken out of rotation is still a card that needs rewriting or deleting — dropping it from the list would turn suspension into a way to forget the problem rather than park it.
+- 2026-08-23 12:00: The empty leech list explains why it is empty. Zero is the expected reading for a while: a leech counter counts failures, and failures only started being registered when production cards shipped three days ago. A bare "nothing here" would read as "your cards are fine", which is precisely the false reassurance the refuted leech-detector conjecture in the Changelog is about.
 
 ## Changelog
 
@@ -820,6 +827,59 @@ through Interceptor:
 **Not closed here.** ISC-49 is a 30-day measurement of the same-day-sibling share
 against a target under 20%. There is no window yet, and the mechanism shipping is
 not the outcome.
+
+### leech-detection — 2026-08-23
+
+**ISC-62 / Anti-9 — migration on a populated copy.** Copy staged to version 16 —
+the version the instance will be on once burying ships — then 017 rehearsed
+alone against it:
+
+```
+staged to version: 16
+after up: 17
+after second up: 17 (idempotent)
+suspended = 0 on 11 of 11 existing cards
+PRAGMA table_info(cards) → 18|suspended|INTEGER|1|0|0
+```
+
+FSRS columns snapshotted across the 016→017 step and diffed:
+`IDENTICAL — no FSRS column moved`.
+
+**ISC-60 / ISC-61 / ISC-62 — Go tests.** Eleven tests across
+`internal/services/leech_test.go` and `internal/handlers/web/leech_test.go`: the
+threshold is a boundary (7 is not a leech, 8 is); the list is owner-scoped,
+worst first, and includes suspended leeches; a suspended card is served by
+nothing and comes back with an identical FSRS snapshot; suspension leaves every
+due count (deck overview, deck list, dashboard, due-only API) while the leech
+count still reports it; suspended siblings are neither buried nor counted as
+held back; suspend and delete both stop at the owner; the list renders all three
+remedies and omits cards under the threshold; the empty state explains itself;
+the dashboard routes to the list either way; the flag renders on the question
+and on the answer.
+
+**ISC-60 / ISC-61 / ISC-62 — end to end in a real browser.** Local instance on a
+copy, one card seeded at 11 lapses and one at 3, driven through Interceptor in
+dark mode:
+
+- Dashboard: *"1 card keeps failing — it is probably asking too much at once"*
+  with a **Review them →** route. (The first render read "…they are probably
+  asking…" for a single card; copy corrected and re-verified.)
+- `/leeches`: the 11-lapse card with its deck name and an `11 lapses` badge,
+  offering Edit, Suspend and Delete. The 3-lapse card is absent. Screenshot
+  viewed.
+- Study session: the card carries *"Leech — failed 11 times. Worth rewriting."*
+  above the question.
+- Clicked Suspend → the row reads *"Suspended — not being served"*, the button
+  becomes **Put it back**, and the study session drops from 2 cards to 1,
+  serving the other card instead. The dashboard reads `Due Today 1`, the deck
+  reads `Study (1)`.
+- Its FSRS row after suspension is byte-identical to before —
+  `due 2026-08-23T11:44:24Z, stability 1.2, difficulty 8.4, reps 19, state 2`.
+
+**A note on what this measures.** The threshold count will read zero on the real
+collection for a while, and that is the correct reading rather than a bug: a
+leech counter counts failures, and failure has only been registered since
+production cards shipped.
 
 ### Remaining criteria
 

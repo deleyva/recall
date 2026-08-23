@@ -1,6 +1,13 @@
 {{define "study_answer_partial.html"}}
 {{$suggested := 0}}{{if .Check}}{{$suggested = .Check.SuggestedRating}}{{end}}
 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 text-center">
+    {{if .Card.IsLeech}}
+    <!-- The learner should know this card has a history before answering it:
+         the point of the flag is to prompt a rewrite, not another attempt. -->
+    <div class="mb-4 text-xs font-semibold inline-block px-2 py-1 rounded border border-amber-400 dark:border-amber-600 text-amber-800 dark:text-amber-200">
+        Leech — failed {{.Card.Lapses}} times. Worth rewriting.
+    </div>
+    {{end}}
     <div class="text-lg font-medium mb-4">{{.Card.Front | safeHTML}}</div>
     <hr class="my-4">
 

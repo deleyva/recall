@@ -303,6 +303,59 @@ func (h *ReviewHandler) UnburyDeck(c echo.Context) error {
 	return c.Redirect(http.StatusSeeOther, "/decks/"+deckID)
 }
 
+// LeechesPage lists the cards that keep failing. A card at eight lapses is not
+// hard, it is malformed — the list exists so the learner can fix the card
+// rather than keep re-serving it, which is why the remedies are edit, delete
+// and suspend rather than a reschedule.
+func (h *ReviewHandler) LeechesPage(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+
+	cards, err := h.cards.ListLeeches(userID)
+	if err != nil {
+		return err
+	}
+
+	// Deck names, so a row says where the card lives without a lookup per row.
+	deckNames := map[string]string{}
+	if decks, err := h.decks.List(userID); err == nil {
+		for _, d := range decks {
+			deckNames[d.ID] = d.Name
+		}
+	}
+
+	return h.tmpl.ExecuteTemplate(c.Response(), "leeches.html", map[string]interface{}{
+		"Cards":     cards,
+		"DeckNames": deckNames,
+		"Threshold": models.LeechThreshold,
+		"Email":     c.Get(middleware.EmailKey),
+		"IsAdmin":   middleware.IsAdmin(c),
+	})
+}
+
+// SuspendLeech takes a card out of rotation, or puts it back. Suspending is
+// offered rather than applied: Anki auto-suspends at the threshold, but this
+// system's rule is that anything touching the learner's own cards proposes and
+// waits.
+func (h *ReviewHandler) SuspendLeech(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+	cardID := c.Param("cardID")
+
+	if err := h.cards.SetSuspendedForUser(cardID, userID, c.FormValue("suspended") == "1"); err != nil {
+		return err
+	}
+	return c.Redirect(http.StatusSeeOther, "/leeches")
+}
+
+// DeleteLeech removes the card. The confirmation is on the form.
+func (h *ReviewHandler) DeleteLeech(c echo.Context) error {
+	userID := middleware.GetUserID(c)
+
+	if err := h.cards.DeleteForUser(c.Param("cardID"), userID); err != nil {
+		return err
+	}
+	return c.Redirect(http.StatusSeeOther, "/leeches")
+}
+
 func (h *ReviewHandler) StatsPage(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 

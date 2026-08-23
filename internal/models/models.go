@@ -90,7 +90,25 @@ type Card struct {
 	// passes. It is presentation state: nil means not buried, and nothing in
 	// the bury path writes an FSRS column.
 	BuriedUntil *time.Time `json:"buried_until,omitempty"`
+	// Suspended takes the card out of every study path until the learner puts
+	// it back. Also presentation state — the schedule survives untouched.
+	Suspended bool `json:"suspended"`
 }
+
+// LeechThreshold is the lapse count at which a card stops being hard and starts
+// being evidence of a badly written card. Eight is Anki's default and the
+// number the SuperMemo formulation rules are argued from.
+//
+// It lives here rather than in services because the study templates ask a card
+// whether it is a leech, and a template cannot reach into the services package.
+const LeechThreshold = 8
+
+// IsLeech reports whether this card has failed often enough to be worth
+// rewriting rather than re-serving. The count is only meaningful now that
+// failure is registered at all: before production cards, a self-graded
+// recognition flow produced almost no Again, so no card ever accumulated
+// lapses no matter how bad it was.
+func (c Card) IsLeech() bool { return c.Lapses >= LeechThreshold }
 
 type ReviewLog struct {
 	ID            string    `json:"id"`
@@ -106,6 +124,11 @@ type Stats struct {
 	TotalCards int `json:"total_cards"`
 	DueToday   int `json:"due_today"`
 	Streak     int `json:"streak"`
+	// Leeches is the count of cards at or above LeechThreshold. It drives the
+	// dashboard's route into the leech list; zero is the expected reading for
+	// a while, because lapses only start accumulating once failure is
+	// registered at all.
+	Leeches int `json:"leeches"`
 }
 
 type DailyReviewCount struct {

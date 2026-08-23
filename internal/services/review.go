@@ -26,10 +26,11 @@ const LearnAheadWindow = 20 * time.Minute
 // learning and relearning cards close enough to be worth finishing now. Review
 // cards are never pulled forward — studying ahead of the schedule is exactly
 // what the spacing is there to prevent. A buried sibling is skipped until its
-// timestamp passes; burying changes only what the queue shows, never when the
-// scheduler thinks the card is due.
+// timestamp passes and a suspended card is skipped until the learner puts it
+// back; neither changes when the scheduler thinks the card is due.
 const queuePredicate = `
 	deck_id = ?
+	AND suspended = 0
 	AND (buried_until IS NULL OR buried_until <= ?)
 	AND (
 		due <= ?
@@ -62,7 +63,7 @@ func (s *ReviewService) GetNextDue(deckID string) (*models.Card, int, error) {
 
 	row := s.db.QueryRow(`
 		SELECT id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days,
-			reps, lapses, state, last_review, created_at, updated_at, article_id, kind, buried_until
+			reps, lapses, state, last_review, created_at, updated_at, article_id, kind, buried_until, suspended
 		FROM cards
 		WHERE`+queuePredicate+queueOrder+`
 		LIMIT 1
@@ -102,9 +103,17 @@ func (s *ReviewService) GetStats(userID string) (*models.Stats, error) {
 	s.db.QueryRow(`
 		SELECT COUNT(*) FROM cards c
 		JOIN decks d ON c.deck_id = d.id
-		WHERE d.user_id = ? AND c.due <= ?
+		WHERE d.user_id = ? AND c.due <= ? AND c.suspended = 0
 		  AND (c.buried_until IS NULL OR c.buried_until <= ?)
 	`, userID, now, now).Scan(&stats.DueToday)
+
+	// Cards that keep failing. Counted here so the dashboard can route to the
+	// list without a second round trip.
+	s.db.QueryRow(`
+		SELECT COUNT(*) FROM cards c
+		JOIN decks d ON c.deck_id = d.id
+		WHERE d.user_id = ? AND c.lapses >= ?
+	`, userID, models.LeechThreshold).Scan(&stats.Leeches)
 
 	// Streak (consecutive days with reviews)
 	stats.Streak = s.calculateStreak(userID)

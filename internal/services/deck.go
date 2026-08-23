@@ -42,9 +42,10 @@ func (s *DeckService) List(userID string) ([]models.Deck, error) {
 	rows, err := s.db.Query(`
 		SELECT d.id, d.user_id, d.name, d.description, d.created_at,
 			COALESCE((SELECT COUNT(*) FROM cards c WHERE c.deck_id = d.id AND c.due <= ?
+				AND c.suspended = 0
 				AND (c.buried_until IS NULL OR c.buried_until <= ?)), 0) as due_count,
 			COALESCE((SELECT COUNT(*) FROM cards c WHERE c.deck_id = d.id
-				AND c.buried_until > ?), 0) as buried_count
+				AND c.suspended = 0 AND c.buried_until > ?), 0) as buried_count
 		FROM decks d
 		WHERE d.user_id = ?
 		ORDER BY due_count DESC, d.created_at DESC
@@ -75,9 +76,10 @@ func (s *DeckService) Get(userID, deckID string) (*models.Deck, error) {
 	err := s.db.QueryRow(`
 		SELECT d.id, d.user_id, d.name, d.description, d.created_at,
 			COALESCE((SELECT COUNT(*) FROM cards c WHERE c.deck_id = d.id AND c.due <= ?
+				AND c.suspended = 0
 				AND (c.buried_until IS NULL OR c.buried_until <= ?)), 0) as due_count,
 			COALESCE((SELECT COUNT(*) FROM cards c WHERE c.deck_id = d.id
-				AND c.buried_until > ?), 0) as buried_count
+				AND c.suspended = 0 AND c.buried_until > ?), 0) as buried_count
 		FROM decks d
 		WHERE d.id = ? AND d.user_id = ?
 	`, now, now, now, deckID, userID).Scan(&d.ID, &d.UserID, &d.Name, &d.Description, &createdAt, &d.DueCount, &d.BuriedCount)

@@ -1,0 +1,66 @@
+{{define "leeches.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "content"}}
+<div class="mb-6">
+    <h1 class="text-2xl font-bold">Cards that keep failing</h1>
+    <p class="text-gray-500 dark:text-gray-400 mt-1">
+        A card failed {{.Threshold}} times or more is usually not hard — it is asking for
+        too much at once. Rewrite it, split it, or take it out.
+    </p>
+</div>
+
+{{if .Cards}}
+<div class="space-y-4">
+    {{range .Cards}}
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+            <span class="text-xs font-semibold px-2 py-1 rounded border border-amber-400 dark:border-amber-600 text-amber-800 dark:text-amber-200">
+                {{.Lapses}} lapses
+            </span>
+            {{if .Suspended}}
+            <span class="text-xs font-semibold px-2 py-1 rounded border border-gray-400 dark:border-gray-500 text-gray-600 dark:text-gray-300">
+                Suspended — not being served
+            </span>
+            {{end}}
+            <span class="text-xs text-gray-500 dark:text-gray-400">{{index $.DeckNames .DeckID}}</span>
+        </div>
+
+        <div class="mb-2 font-medium">{{.Front | safeHTML}}</div>
+        <div class="text-sm text-gray-600 dark:text-gray-300 mb-4">{{.Back | safeHTML}}</div>
+
+        <div class="flex flex-wrap justify-end gap-2">
+            <a href="/decks/{{.DeckID}}/cards/{{.ID}}/edit"
+               class="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 px-3 py-1.5 border border-indigo-300 dark:border-indigo-600 rounded-lg">
+                Edit
+            </a>
+            <form method="POST" action="/leeches/{{.ID}}/suspend">
+                <input type="hidden" name="suspended" value="{{if .Suspended}}0{{else}}1{{end}}">
+                <button type="submit"
+                        class="text-sm text-gray-700 dark:text-gray-200 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                    {{if .Suspended}}Put it back{{else}}Suspend{{end}}
+                </button>
+            </form>
+            <form method="POST" action="/leeches/{{.ID}}/delete" onsubmit="return confirm('Delete this card? This cannot be undone.')">
+                <button type="submit"
+                        class="text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 px-3 py-1.5 border border-red-300 dark:border-red-600 rounded-lg">
+                    Delete
+                </button>
+            </form>
+        </div>
+    </div>
+    {{end}}
+</div>
+{{else}}
+<div class="bg-white dark:bg-gray-800 rounded-lg shadow p-8 text-center">
+    <p class="text-gray-600 dark:text-gray-300">No card has reached {{.Threshold}} lapses.</p>
+    <p class="text-sm text-gray-500 dark:text-gray-400 mt-2">
+        This count only means something once failure is registered — a card can only
+        become a leech if you can miss it.
+    </p>
+</div>
+{{end}}
+
+<a href="/" class="inline-block mt-6 text-indigo-600 hover:underline">&larr; Back to decks</a>
+{{end}}

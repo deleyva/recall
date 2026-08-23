@@ -25,6 +25,22 @@
 </div>
 {{end}}
 
+{{if .Stats}}
+{{if gt .Stats.Leeches 0}}
+<a href="/leeches" class="flex items-center justify-between gap-4 mb-8 px-4 py-3 rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950 hover:bg-amber-100 dark:hover:bg-amber-900">
+    <p class="text-sm text-amber-900 dark:text-amber-100">
+        <span class="font-semibold">{{.Stats.Leeches}}</span>
+        {{if eq .Stats.Leeches 1}}card keeps failing — it is probably asking{{else}}cards keep failing — they are probably asking{{end}} too much at once.
+    </p>
+    <span class="text-sm font-medium text-amber-900 dark:text-amber-100 whitespace-nowrap">Review them &rarr;</span>
+</a>
+{{else}}
+<div class="mb-8">
+    <a href="/leeches" class="text-sm text-gray-500 dark:text-gray-400 hover:underline">Cards that keep failing</a>
+</div>
+{{end}}
+{{end}}
+
 {{if .Decks}}
 <div class="grid gap-4">
     {{range .Decks}}

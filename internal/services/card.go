@@ -106,7 +106,7 @@ func (s *CardService) List(deckID string, page, perPage int) ([]models.Card, int
 
 	rows, err := s.db.Query(`
 		SELECT id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days,
-			reps, lapses, state, last_review, created_at, updated_at, article_id, kind, buried_until
+			reps, lapses, state, last_review, created_at, updated_at, article_id, kind, buried_until, suspended
 		FROM cards WHERE deck_id = ?
 		ORDER BY created_at DESC
 		LIMIT ? OFFSET ?
@@ -150,7 +150,7 @@ func (s *CardService) ListForUser(userID, deckID, articleID string, dueOnly bool
 	}
 	if dueOnly {
 		now := time.Now().UTC().Format(time.RFC3339)
-		where += " AND c.due <= ? AND (c.buried_until IS NULL OR c.buried_until <= ?)"
+		where += " AND c.due <= ? AND c.suspended = 0 AND (c.buried_until IS NULL OR c.buried_until <= ?)"
 		args = append(args, now, now)
 	}
 
@@ -163,7 +163,7 @@ func (s *CardService) ListForUser(userID, deckID, articleID string, dueOnly bool
 
 	rows, err := s.db.Query(`
 		SELECT c.id, c.deck_id, c.front, c.back, c.due, c.stability, c.difficulty, c.elapsed_days,
-			c.scheduled_days, c.reps, c.lapses, c.state, c.last_review, c.created_at, c.updated_at, c.article_id, c.kind, c.buried_until
+			c.scheduled_days, c.reps, c.lapses, c.state, c.last_review, c.created_at, c.updated_at, c.article_id, c.kind, c.buried_until, c.suspended
 		FROM cards c JOIN decks d ON c.deck_id = d.id
 		WHERE `+where+`
 		ORDER BY c.created_at DESC
@@ -188,7 +188,7 @@ func (s *CardService) ListForUser(userID, deckID, articleID string, dueOnly bool
 func (s *CardService) Get(cardID string) (*models.Card, error) {
 	row := s.db.QueryRow(`
 		SELECT id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days,
-			reps, lapses, state, last_review, created_at, updated_at, article_id, kind, buried_until
+			reps, lapses, state, last_review, created_at, updated_at, article_id, kind, buried_until, suspended
 		FROM cards WHERE id = ?
 	`, cardID)
 	return scanCardRow(row)
@@ -198,7 +198,7 @@ func (s *CardService) Get(cardID string) (*models.Card, error) {
 func (s *CardService) GetForUser(cardID, userID string) (*models.Card, error) {
 	row := s.db.QueryRow(`
 		SELECT c.id, c.deck_id, c.front, c.back, c.due, c.stability, c.difficulty, c.elapsed_days, c.scheduled_days,
-			c.reps, c.lapses, c.state, c.last_review, c.created_at, c.updated_at, c.article_id, c.kind, c.buried_until
+			c.reps, c.lapses, c.state, c.last_review, c.created_at, c.updated_at, c.article_id, c.kind, c.buried_until, c.suspended
 		FROM cards c
 		JOIN decks d ON c.deck_id = d.id
 		WHERE c.id = ? AND d.user_id = ?
@@ -304,6 +304,7 @@ func (s *CardService) BurySiblings(cardID, userID string, now time.Time, loc *ti
 		  AND article_id = (SELECT article_id FROM cards WHERE id = ?)
 		  AND deck_id IN (SELECT id FROM decks WHERE user_id = ?)
 		  AND state NOT IN (1, 3)
+		  AND suspended = 0
 		  AND due <= ?
 		  AND (buried_until IS NULL OR buried_until < ?)
 	`, boundary, cardID, cardID, userID, nowStr, boundary)
@@ -315,6 +316,57 @@ func (s *CardService) BurySiblings(cardID, userID string, now time.Time, loc *ti
 		return 0, fmt.Errorf("bury siblings: %w", err)
 	}
 	return int(buried), nil
+}
+
+// ListLeeches returns every card the user owns that has reached the leech
+// threshold, worst first, across every deck. Suspended leeches are included:
+// the list is where a learner goes to decide what to do about them, and a card
+// already taken out of rotation is still a card that needs rewriting or
+// deleting.
+func (s *CardService) ListLeeches(userID string) ([]models.Card, error) {
+	rows, err := s.db.Query(`
+		SELECT c.id, c.deck_id, c.front, c.back, c.due, c.stability, c.difficulty, c.elapsed_days,
+			c.scheduled_days, c.reps, c.lapses, c.state, c.last_review, c.created_at, c.updated_at,
+			c.article_id, c.kind, c.buried_until, c.suspended
+		FROM cards c JOIN decks d ON c.deck_id = d.id
+		WHERE d.user_id = ? AND c.lapses >= ?
+		ORDER BY c.lapses DESC, c.updated_at DESC
+	`, userID, models.LeechThreshold)
+	if err != nil {
+		return nil, fmt.Errorf("list leeches: %w", err)
+	}
+	defer rows.Close()
+
+	cards := []models.Card{}
+	for rows.Next() {
+		c, err := scanCard(rows)
+		if err != nil {
+			return nil, err
+		}
+		cards = append(cards, *c)
+	}
+	return cards, rows.Err()
+}
+
+// SetSuspendedForUser takes a card out of every study path, or puts it back.
+// Like burying, it writes one presentation column: a card that comes back
+// carries the schedule it left with, so suspending is never a way to lose work.
+func (s *CardService) SetSuspendedForUser(cardID, userID string, suspended bool) error {
+	result, err := s.db.Exec(`
+		UPDATE cards SET suspended = ?
+		WHERE id = ? AND deck_id IN (SELECT id FROM decks WHERE user_id = ?)
+	`, suspended, cardID, userID)
+	if err != nil {
+		return fmt.Errorf("set suspended: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("set suspended: %w", err)
+	}
+	if rows == 0 {
+		return fmt.Errorf("card not found")
+	}
+	return nil
 }
 
 // UnburyDeck clears every bury in one deck, so a learner who wants the whole
@@ -435,7 +487,7 @@ func scanCardFromRow(s scannable) (*models.Card, error) {
 	var articleID, buriedUntil *string
 	err := s.Scan(&c.ID, &c.DeckID, &c.Front, &c.Back, &due, &c.Stability, &c.Difficulty,
 		&c.ElapsedDays, &c.ScheduledDays, &c.Reps, &c.Lapses, &c.State, &lastReview, &createdAt, &updatedAt,
-		&articleID, &c.Kind, &buriedUntil)
+		&articleID, &c.Kind, &buriedUntil, &c.Suspended)
 	if err != nil {
 		return nil, fmt.Errorf("scan card: %w", err)
 	}

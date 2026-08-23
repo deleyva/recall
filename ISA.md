@@ -9,7 +9,7 @@ progress: 73/119
 iteration: 3
 mode: interactive
 started: 2026-08-20T14:30:00Z
-updated: 2026-08-23T20:00:00Z
+updated: 2026-08-23T22:15:00Z
 principal_stated_goal: "usando los datos del artículo, crea un ISA o completa/reelabora el existente para indroducir las novedades que marca el artículo, para cerrar la brecha entre ANKI/Buenas prácticas y Recall"
 principal_stated_goal_source: prompt
 principal_stated_goal_signal: 4
@@ -202,7 +202,7 @@ Also excluded: changing the FSRS library version or upgrading to FSRS-5/6; a con
 ### Atomic formulation
 
 - [x] ISC-63: `DefaultFlashcardPrompt` states the minimum-information principle: one idea per card, an answer of a single element, no enumerations (a source list of N items becomes N cards), no coordinating conjunction in the question, HTML reserved for emphasis rather than list structure.
-- [ ] ISC-64: For any source passage containing a named work, author, or other proper name, the generator emits the pair in both directions — name → claim and claim → name — with the claim → name card marked `kind = production`. `[DEFERRED-VERIFY]` — the instruction is in the prompt and the `kind` the generator returns is carried through the parser into the column, both proven; the claim is about what a live generation actually emits, and there is no key on this machine to run one. Closes on a generation against the deployed instance, as ISC-32 and ISC-33 did.
+- [ ] ISC-64: For any source passage containing a named work, author, or other proper name, the generator emits the pair in both directions — name → claim and claim → name — with the claim → name card marked `kind = production`. `[DEFERRED-VERIFY]` — the instruction is in the prompt and the `kind` the generator returns is carried through the parser into the column, both proven, and the live build produced a `production` card unaided. What has not happened is the bidirectional pair: the first three cards generated after the deploy contain zero inverse pairs. Closes on a deliberate generation over a passage with a proper name; if it fails again the prompt needs the pair demanded more forcefully than as one bullet among six.
 - [ ] ISC-65: Measured by `recall metrics` over cards generated in the 30 days after the prompt change, fewer than 10% of backs contain `<li>` and fewer than 10% of fronts contain a coordinating conjunction.
 - [x] ISC-66: A splitter tool lists every existing card whose back contains a list or whose front contains a coordinating conjunction, proposes a split into atomic cards, and writes nothing until the operator confirms that specific card.
 - [x] ISC-67: Running the splitter with no confirmation leaves the card table byte-identical, proven by a checksum of the table before and after a dry run.
@@ -1078,6 +1078,54 @@ offered.
 The full-page screenshot of the profile was rendered too narrow to read, so the
 UI half of ISC-69 closed on a targeted DOM read of those three fields rather
 than on pixels. Stated rather than glossed: nothing here is an appearance claim.
+
+### Deploy — 2026-08-23
+
+Seven commits pushed to `main`. CI ran `go vet ./... && go test ./...`, built and
+published `ghcr.io/deleyva/recall:latest`; the stack was redeployed with
+`pullImage` and came up on a new container.
+
+**Backup first.** The live database plus its write-ahead log and shared-memory
+file were copied to a writable location and pulled down to a second machine. The
+data directory is root-owned, so the copy went to the operator's home rather than
+beside the original. The WAL was 4.7 MB against a 5.8 MB database — copying the
+`.db` alone would have been a materially incomplete backup. Verified rather than
+assumed: `PRAGMA integrity_check` → `ok`, schema 15, 474 cards, 1920 reviews.
+
+**Four migrations in one startup.** `goose: successfully migrated database to
+version: 19` followed by `Recall starting on :8080`. The live schema afterwards
+reports version 19, 474 cards and 1920 reviews — unchanged, which is Anti-9's
+claim holding on the real database rather than on a copy.
+
+**Live probes.** `/api/v1/health` → 200 `{"api":"v1","status":"ok"}`; an
+unauthenticated `/api/v1/search` → 401; `/study` and `/leeches` → 303 to login
+rather than 404, so the new routes exist on the deployed build.
+
+**The new code is doing its job in production, in a real browser.** The session
+picker offers a topic the classifier produced on its own: one tag, three cards
+carrying it, with a domain from the closed list. Nobody typed it. That is ISC-55
+holding outside a test.
+
+**Two honest signals from the first three cards generated on the new build:**
+
+- One of the three is `kind = production`, so the generator's judgement about an
+  answer reaches the column through the live LLM, not only through a table test.
+- **Zero inverse pairs.** Checked structurally — no card's answer appears inside
+  a sibling's question — so the bidirectional emission ISC-64 requires did not
+  happen on this batch. ISC-64 stays open, and now for a measured reason rather
+  than an absent probe.
+- One of the three still carries a `<li>` back, against a prompt that forbids
+  list markup outright. Three cards is far too small a sample to conclude
+  anything, but it is the first evidence that the prompt alone may not reach
+  ISC-65's threshold, and the splitter may have to carry more of it than
+  planned.
+
+**Post-change baseline for the outcome criteria**, measured by `recall metrics`
+inside the deployed container: true retention 96.2%, backs with a list 31.9%,
+fronts with a conjunction 31.9%. The retention figure sits above the 95% ceiling
+ISC-71 names as evidence the instrument is still measuring recognition, which is
+the expected reading — almost every review in the log predates production cards.
+These are the numbers the 30- and 60-day claims will be compared against.
 
 ### Remaining criteria
 

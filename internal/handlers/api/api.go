@@ -276,7 +276,7 @@ func (h *Handler) GetStudyCard(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "deck not found"})
 	}
 
-	card, dueCount, err := h.reviews.GetNextDue(deckID)
+	card, dueCount, err := h.reviews.GetNextDue(userID, deckID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
@@ -338,7 +338,7 @@ func (h *Handler) SubmitStudyReview(c echo.Context) error {
 	}
 
 	// Get next card
-	nextCard, dueCount, _ := h.reviews.GetNextDue(deckID)
+	nextCard, dueCount, _ := h.reviews.GetNextDue(userID, deckID)
 
 	result := map[string]interface{}{
 		"due_count": dueCount,

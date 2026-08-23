@@ -97,7 +97,7 @@ func TestSuspendedCardIsNeverServedAndKeepsItsSchedule(t *testing.T) {
 	}
 	before := snapshot()
 
-	if card, count, _ := NewReviewService(db).GetNextDue("deck"); card == nil || count != 1 {
+	if card, count, _ := NewReviewService(db).GetNextDue("u1", "deck"); card == nil || count != 1 {
 		t.Fatalf("the card was not being served before suspension: card=%v count=%d", card, count)
 	}
 
@@ -107,14 +107,14 @@ func TestSuspendedCardIsNeverServedAndKeepsItsSchedule(t *testing.T) {
 	if !suspendedFlag(t, db, "leech") {
 		t.Fatal("the card was not suspended")
 	}
-	if card, count, _ := NewReviewService(db).GetNextDue("deck"); card != nil || count != 0 {
+	if card, count, _ := NewReviewService(db).GetNextDue("u1", "deck"); card != nil || count != 0 {
 		t.Fatalf("a suspended card was served: card=%v count=%d", card, count)
 	}
 
 	if err := cards.SetSuspendedForUser("leech", "u1", false); err != nil {
 		t.Fatalf("unsuspend: %v", err)
 	}
-	if card, count, _ := NewReviewService(db).GetNextDue("deck"); card == nil || count != 1 {
+	if card, count, _ := NewReviewService(db).GetNextDue("u1", "deck"); card == nil || count != 1 {
 		t.Fatalf("the card did not come back: card=%v count=%d", card, count)
 	}
 	if after := snapshot(); after != before {

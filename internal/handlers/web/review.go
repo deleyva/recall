@@ -96,7 +96,7 @@ func (h *ReviewHandler) StudyPage(c echo.Context) error {
 		return c.Redirect(http.StatusSeeOther, "/")
 	}
 
-	card, dueCount, err := h.reviews.GetNextDue(deckID)
+	card, dueCount, err := h.reviews.GetNextDue(userID, deckID)
 	if err != nil {
 		return err
 	}
@@ -139,8 +139,8 @@ func (h *ReviewHandler) renderAnswerPartial(w http.ResponseWriter, card *models.
 }
 
 // renderNextCardOrDone fetches the next due card and renders either the card or done partial.
-func (h *ReviewHandler) renderNextCardOrDone(w http.ResponseWriter, deckID string) error {
-	nextCard, dueCount, _ := h.reviews.GetNextDue(deckID)
+func (h *ReviewHandler) renderNextCardOrDone(w http.ResponseWriter, userID, deckID string) error {
+	nextCard, dueCount, _ := h.reviews.GetNextDue(userID, deckID)
 	data := map[string]interface{}{
 		"Deck":     map[string]string{"ID": deckID},
 		"DueCount": dueCount,
@@ -230,7 +230,7 @@ func (h *ReviewHandler) SubmitReview(c echo.Context) error {
 	// The next card has to be earned on its own.
 	h.clearRevealed(c)
 
-	return h.renderNextCardOrDone(c.Response(), deckID)
+	return h.renderNextCardOrDone(c.Response(), userID, deckID)
 }
 
 func (h *ReviewHandler) StudyEditCard(c echo.Context) error {
@@ -290,7 +290,7 @@ func (h *ReviewHandler) StudyDeleteCard(c echo.Context) error {
 		return err
 	}
 
-	return h.renderNextCardOrDone(c.Response(), deckID)
+	return h.renderNextCardOrDone(c.Response(), userID, deckID)
 }
 
 // UnburyDeck clears every bury in the deck. Burying is a default, not a

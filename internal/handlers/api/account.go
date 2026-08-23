@@ -13,7 +13,12 @@ import (
 // userSettings is the editable half of a user record. Readeck credentials are
 // write-only: the token goes in, it never comes back out.
 type userSettings struct {
+	// Three distinct limits. DailyCardLimit bounds how many cards the nightly
+	// job CREATES; the two study limits bound how many the queue SERVES. They
+	// answer different questions and are stored, labelled and validated apart.
 	DailyCardLimit      int    `json:"daily_card_limit"`
+	DailyNewLimit       int    `json:"daily_new_limit"`
+	DailyReviewLimit    int    `json:"daily_review_limit"`
 	PodcastEnabled      bool   `json:"podcast_enabled"`
 	FlashcardGenEnabled bool   `json:"flashcard_gen_enabled"`
 	FlashcardPrompt     string `json:"flashcard_prompt"`
@@ -31,13 +36,15 @@ func (h *Handler) GetMe(c echo.Context) error {
 
 	var (
 		email, createdAt, readeckURL, readeckToken, prompt, llmModel string
-		limit, podcast, gen, isAdmin                                 int
+		limit, podcast, gen, isAdmin, newLimit, reviewLimit          int
 	)
 	err := h.db.QueryRow(`
 		SELECT email, created_at, daily_card_limit, readeck_url, readeck_api_token,
-			podcast_enabled, flashcard_prompt, flashcard_gen_enabled, is_admin, llm_model
+			podcast_enabled, flashcard_prompt, flashcard_gen_enabled, is_admin, llm_model,
+			daily_new_limit, daily_review_limit
 		FROM users WHERE id = ?`, userID).
-		Scan(&email, &createdAt, &limit, &readeckURL, &readeckToken, &podcast, &prompt, &gen, &isAdmin, &llmModel)
+		Scan(&email, &createdAt, &limit, &readeckURL, &readeckToken, &podcast, &prompt, &gen, &isAdmin, &llmModel,
+			&newLimit, &reviewLimit)
 	if err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "user not found"})
 	}
@@ -52,6 +59,8 @@ func (h *Handler) GetMe(c echo.Context) error {
 		"created_at": createdAt,
 		"settings": userSettings{
 			DailyCardLimit:      limit,
+			DailyNewLimit:       newLimit,
+			DailyReviewLimit:    reviewLimit,
 			PodcastEnabled:      podcast == 1,
 			FlashcardGenEnabled: gen == 1,
 			FlashcardPrompt:     prompt,
@@ -69,6 +78,8 @@ func (h *Handler) UpdateMySettings(c echo.Context) error {
 	// Pointers so "absent" and "set to zero/false" stay distinguishable.
 	var req struct {
 		DailyCardLimit      *int    `json:"daily_card_limit"`
+		DailyNewLimit       *int    `json:"daily_new_limit"`
+		DailyReviewLimit    *int    `json:"daily_review_limit"`
 		PodcastEnabled      *bool   `json:"podcast_enabled"`
 		FlashcardGenEnabled *bool   `json:"flashcard_gen_enabled"`
 		FlashcardPrompt     *string `json:"flashcard_prompt"`
@@ -89,6 +100,22 @@ func (h *Handler) UpdateMySettings(c echo.Context) error {
 		}
 		sets = append(sets, "daily_card_limit = ?")
 		args = append(args, *req.DailyCardLimit)
+	}
+	// Each limit is set only when it is named, so writing one never disturbs
+	// another. Zero is allowed for the study limits: it means none today.
+	if req.DailyNewLimit != nil {
+		if *req.DailyNewLimit < 0 || *req.DailyNewLimit > 500 {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "daily_new_limit must be 0-500"})
+		}
+		sets = append(sets, "daily_new_limit = ?")
+		args = append(args, *req.DailyNewLimit)
+	}
+	if req.DailyReviewLimit != nil {
+		if *req.DailyReviewLimit < 0 || *req.DailyReviewLimit > 9999 {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "daily_review_limit must be 0-9999"})
+		}
+		sets = append(sets, "daily_review_limit = ?")
+		args = append(args, *req.DailyReviewLimit)
 	}
 	if req.PodcastEnabled != nil {
 		sets = append(sets, "podcast_enabled = ?")

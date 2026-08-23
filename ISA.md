@@ -5,11 +5,11 @@ project: recall
 effort: E4
 effort_source: gate-floor
 phase: build
-progress: 71/119
+progress: 73/119
 iteration: 3
 mode: interactive
 started: 2026-08-20T14:30:00Z
-updated: 2026-08-23T18:00:00Z
+updated: 2026-08-23T20:00:00Z
 principal_stated_goal: "usando los datos del artículo, crea un ISA o completa/reelabora el existente para indroducir las novedades que marca el artículo, para cerrar la brecha entre ANKI/Buenas prácticas y Recall"
 principal_stated_goal_source: prompt
 principal_stated_goal_signal: 4
@@ -209,8 +209,8 @@ Also excluded: changing the FSRS library version or upgrading to FSRS-5/6; a con
 
 ### Study load
 
-- [ ] ISC-68: New-card and review-card daily study limits are separate per-user settings, enforced by the study queue rather than by the generator.
-- [ ] ISC-69: The generation limit and the study limits are distinct, separately labelled settings in the profile UI and in the account API, and changing one does not change the other.
+- [x] ISC-68: New-card and review-card daily study limits are separate per-user settings, enforced by the study queue rather than by the generator — and every count of due cards is capped by the same budget, not merely filtered by it. *(widened mid-run — see Changelog)*
+- [x] ISC-69: The generation limit and the study limits are distinct, separately labelled settings in the profile UI and in the account API, and changing one does not change the other.
 
 ### Outcomes
 
@@ -526,7 +526,18 @@ control covers the single fix.
 - 2026-08-23 18:00: Applying names **one card id**. There is no bulk apply, not even behind a flag. Anti-8 requires per-card confirmation, and a `--all` that existed would eventually be used at three in the morning.
 
 
+- 2026-08-23 20:00: "Introduced today" is a card whose **first review** falls today, not a review log carrying state 0. The scheduler writes the state a card moved *into*, so a new card rated Good logs as learning; counting the log's state would have missed every card the new-card limit exists to count. Found by reading `scheduler.Schedule` before writing the query rather than after.
+- 2026-08-23 20:00: The review limit counts **distinct cards**, not reviews. Four relearning attempts at one failed card are one card's worth of load, and counting them separately would spend the day's budget as a punishment for failing — the one thing this system must never do, since it exists to make failure registrable.
+- 2026-08-23 20:00: Learning and relearning cards are exempt from both limits. A limit bounds how much load is taken on; a card mid-loop is load already taken on, and refusing to finish it strands exactly the re-retrieval ISC-51 and ISC-74 restored.
+- 2026-08-23 20:00: Zero means none today, not unlimited. It is the honest reading of the number and it makes "no new cards while I catch up" expressible, which is the setting a learner with a backlog actually wants.
+- 2026-08-23 20:00: The limits are per user, so `GetNextDue` now takes a user id. The signature change touches four call sites and is worth it: deriving the owner from the deck inside the query would have hidden the fact that the budget is global while the queue is per deck.
+
 ## Changelog
+
+- **conjectured**: filtering the queue's state list by the day's remaining budget enforces the study limits — with two new cards left, allow state 0; with none, do not.
+  **refuted by**: the browser, on a deck of five untouched new cards with the new-card limit set to two. The deck page read **Study (5)**, the dashboard read five due, and the queue's own count agreed. The filter was working exactly as written and the numbers were still wrong.
+  **learned**: the state filter is a **boolean** — it decides *whether* new cards may be served at all, not *how many*. Serving was correct all along, because each grading raises the count and the filter closes on its own; counting was not, because a predicate that admits the class admits every card in it. A count has to cap each class by what remains of that class's budget, which is arithmetic the WHERE clause cannot do.
+  **criterion now**: ISC-68 is widened from "enforced by the study queue" to "and every count of due cards is capped by the same budget". This is the third time in this run that a mechanism hid cards from the session while the counts kept promising them — buried, then suspended, now over-budget — so the count is computed once, in `CappedDueCount`, and every surface reads it.
 
 - **conjectured**: after a split, the atomic cards can be found as "the cards in this deck that have no tag yet", so they can inherit the original's tags without threading ids through the transaction.
   **refuted by**: the test asserting the untouched cards stayed untouched — `compound` and `fine` were sitting in the same deck with no tags of their own, and the first cut attached the split card's topic to both of them.
@@ -1015,6 +1026,58 @@ CARD TABLE UNCHANGED by the dry run
 
 **Not closed here.** ISC-65 is a 30-day measurement over cards generated after
 the prompt change, and no such card exists yet.
+
+### study-limits — 2026-08-23
+
+**ISC-68 / Anti-9 — migration on a populated copy.** Copy staged to 18, then 019
+rehearsed alone:
+
+```
+staged to version: 18
+after up: 19
+after second up: 19 (idempotent)
+existing user: generation=5 new=20 reviews=200
+```
+
+The existing generation setting is untouched and the two study limits arrive at
+Anki's defaults. FSRS columns across the step: `IDENTICAL`.
+
+**ISC-68 — Go tests.** Eight tests. The new-card limit stops the queue
+introducing more and raising it by one releases exactly one card; the review
+limit is enforced independently, so spending one budget leaves the other
+working; both limits at zero still serve learning and relearning cards and
+nothing else; "introduced today" counts first reviews, so a card that logged as
+*learning* is still counted as introduced; four relearning attempts at one card
+spend one card's budget; the filtered cross-deck session obeys the same budget;
+and the deck overview, the deck list, the dashboard and the queue all report the
+same capped number.
+
+**ISC-69 — the three settings.** Two API tests: writing each of the three limits
+in turn leaves the other two exactly where they were, and each is validated on
+its own terms — zero is a real answer for a study limit and a refusal for the
+generation limit, and a refused write moves nothing.
+
+In the browser, the profile page carries three distinct inputs with three
+distinct labels and three distinct ranges:
+
+```
+daily_card_limit   | Cards generated per day | value 5   | min 1 max 20
+daily_new_limit    | New cards per day       | value 20  | min 0 max 500
+daily_review_limit | Reviews per day         | value 200 | min 0 max 9999
+```
+
+Submitting the form with only the new-card limit changed moved only that one:
+`5/20/200` became `5/3/200`.
+
+**ISC-68 — end to end.** A deck of five untouched new cards with the limit set
+to two. The deck page reads **Study (2)**, the dashboard reads **2** due today
+against 5 total. Six grading attempts driven through the interface introduced
+exactly two distinct cards, `nueva 1` and `nueva 2`; the other three were never
+offered.
+
+The full-page screenshot of the profile was rendered too narrow to read, so the
+UI half of ISC-69 closed on a targeted DOM read of those three fields rather
+than on pixels. Stated rather than glossed: nothing here is an appearance claim.
 
 ### Remaining criteria
 

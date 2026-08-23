@@ -28,10 +28,13 @@ func (h *ProfileHandler) ProfilePage(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 	tokens, _ := h.tokens.List(userID)
 
-	var dailyCardLimit int
+	var dailyCardLimit, dailyNewLimit, dailyReviewLimit int
 	var readeckURL, readeckToken, flashcardPrompt, llmModel string
 	var podcastEnabled, flashcardGenEnabled int
-	h.db.QueryRow("SELECT daily_card_limit, readeck_url, readeck_api_token, podcast_enabled, flashcard_prompt, flashcard_gen_enabled, llm_model FROM users WHERE id = ?", userID).Scan(&dailyCardLimit, &readeckURL, &readeckToken, &podcastEnabled, &flashcardPrompt, &flashcardGenEnabled, &llmModel)
+	h.db.QueryRow(`SELECT daily_card_limit, readeck_url, readeck_api_token, podcast_enabled,
+		flashcard_prompt, flashcard_gen_enabled, llm_model, daily_new_limit, daily_review_limit
+		FROM users WHERE id = ?`, userID).Scan(&dailyCardLimit, &readeckURL, &readeckToken,
+		&podcastEnabled, &flashcardPrompt, &flashcardGenEnabled, &llmModel, &dailyNewLimit, &dailyReviewLimit)
 	if dailyCardLimit == 0 {
 		dailyCardLimit = 5
 	}
@@ -50,6 +53,8 @@ func (h *ProfileHandler) ProfilePage(c echo.Context) error {
 		"Error":           c.QueryParam("error"),
 		"Success":         c.QueryParam("success"),
 		"DailyCardLimit":  dailyCardLimit,
+		"DailyNewLimit":    dailyNewLimit,
+		"DailyReviewLimit": dailyReviewLimit,
 		"ReadeckURL":      readeckURL,
 		"ReadeckToken":    readeckToken,
 		"PodcastEnabled":      podcastEnabled == 1,
@@ -67,6 +72,17 @@ func (h *ProfileHandler) UpdateSettings(c echo.Context) error {
 	limit, err := strconv.Atoi(c.FormValue("daily_card_limit"))
 	if err != nil || limit < 1 || limit > 20 {
 		return c.Redirect(http.StatusSeeOther, "/profile?error=Daily+card+limit+must+be+between+1+and+20")
+	}
+
+	// The three limits are independent settings. A form that posts one of them
+	// leaves the other two exactly as they were.
+	newLimit, err := strconv.Atoi(c.FormValue("daily_new_limit"))
+	if err != nil || newLimit < 0 || newLimit > 500 {
+		return c.Redirect(http.StatusSeeOther, "/profile?error=New+cards+per+day+must+be+between+0+and+500")
+	}
+	reviewLimit, err := strconv.Atoi(c.FormValue("daily_review_limit"))
+	if err != nil || reviewLimit < 0 || reviewLimit > 9999 {
+		return c.Redirect(http.StatusSeeOther, "/profile?error=Reviews+per+day+must+be+between+0+and+9999")
 	}
 
 	readeckURL := strings.TrimSpace(c.FormValue("readeck_url"))
@@ -90,8 +106,11 @@ func (h *ProfileHandler) UpdateSettings(c echo.Context) error {
 	}
 
 	_, err = h.db.Exec(
-		"UPDATE users SET daily_card_limit = ?, readeck_url = ?, readeck_api_token = ?, podcast_enabled = ?, flashcard_prompt = ?, flashcard_gen_enabled = ?, llm_model = ? WHERE id = ?",
-		limit, readeckURL, readeckToken, podcastEnabled, flashcardPrompt, flashcardGenEnabled, llmModel, userID,
+		`UPDATE users SET daily_card_limit = ?, readeck_url = ?, readeck_api_token = ?, podcast_enabled = ?,
+			flashcard_prompt = ?, flashcard_gen_enabled = ?, llm_model = ?,
+			daily_new_limit = ?, daily_review_limit = ? WHERE id = ?`,
+		limit, readeckURL, readeckToken, podcastEnabled, flashcardPrompt, flashcardGenEnabled, llmModel,
+		newLimit, reviewLimit, userID,
 	)
 	if err != nil {
 		return c.Redirect(http.StatusSeeOther, "/profile?error="+fmt.Sprintf("Failed+to+save:+%v", err))

@@ -169,7 +169,7 @@ func TestGetNextDueSkipsBuriedCardsUntilTheBoundaryPasses(t *testing.T) {
 	future := time.Now().UTC().Add(6 * time.Hour).Format(time.RFC3339)
 	mustExec(t, db, "UPDATE cards SET buried_until = ? WHERE id = 'buried'", future)
 
-	card, count, err := NewReviewService(db).GetNextDue("deck")
+	card, count, err := NewReviewService(db).GetNextDue("u1", "deck")
 	if err != nil {
 		t.Fatalf("next due: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestGetNextDueSkipsBuriedCardsUntilTheBoundaryPasses(t *testing.T) {
 	past := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
 	mustExec(t, db, "UPDATE cards SET buried_until = ? WHERE id = 'buried'", past)
 
-	card, count, err = NewReviewService(db).GetNextDue("deck")
+	card, count, err = NewReviewService(db).GetNextDue("u1", "deck")
 	if err != nil {
 		t.Fatalf("next due after boundary: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestUnburyDeckRestoresOnlyThatDeck(t *testing.T) {
 	}
 
 	// The point of unburying is that the session serves them again.
-	card, count, err := NewReviewService(db).GetNextDue("deck")
+	card, count, err := NewReviewService(db).GetNextDue("u1", "deck")
 	if err != nil {
 		t.Fatalf("next due after unbury: %v", err)
 	}

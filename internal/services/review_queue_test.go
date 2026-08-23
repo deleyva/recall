@@ -35,7 +35,7 @@ func TestGetNextDueServesLearningCardsSlightlyAhead(t *testing.T) {
 	db := queueDB(t)
 	seedQueueCard(t, db, "relearning", int(fsrs.Relearning), 3*time.Minute)
 
-	card, count, err := NewReviewService(db).GetNextDue("deck")
+	card, count, err := NewReviewService(db).GetNextDue("u1", "deck")
 	if err != nil {
 		t.Fatalf("next due: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestGetNextDueDoesNotReachBeyondTheWindow(t *testing.T) {
 	db := queueDB(t)
 	seedQueueCard(t, db, "far", int(fsrs.Relearning), LearnAheadWindow+10*time.Minute)
 
-	card, count, err := NewReviewService(db).GetNextDue("deck")
+	card, count, err := NewReviewService(db).GetNextDue("u1", "deck")
 	if err != nil {
 		t.Fatalf("next due: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestGetNextDueDoesNotPullReviewCardsForward(t *testing.T) {
 	db := queueDB(t)
 	seedQueueCard(t, db, "review-soon", int(fsrs.Review), 5*time.Minute)
 
-	card, _, err := NewReviewService(db).GetNextDue("deck")
+	card, _, err := NewReviewService(db).GetNextDue("u1", "deck")
 	if err != nil {
 		t.Fatalf("next due: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestGetNextDueServesLearningBeforeNew(t *testing.T) {
 	seedQueueCard(t, db, "new", int(fsrs.New), -time.Hour)
 	seedQueueCard(t, db, "relearning", int(fsrs.Relearning), -time.Minute)
 
-	card, count, err := NewReviewService(db).GetNextDue("deck")
+	card, count, err := NewReviewService(db).GetNextDue("u1", "deck")
 	if err != nil {
 		t.Fatalf("next due: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestGetNextDueStillServesNewBeforeReview(t *testing.T) {
 	seedQueueCard(t, db, "review", int(fsrs.Review), -2*time.Hour)
 	seedQueueCard(t, db, "new", int(fsrs.New), -time.Hour)
 
-	card, _, err := NewReviewService(db).GetNextDue("deck")
+	card, _, err := NewReviewService(db).GetNextDue("u1", "deck")
 	if err != nil {
 		t.Fatalf("next due: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestGetNextDuePrefersDueOverAhead(t *testing.T) {
 	seedQueueCard(t, db, "due-now", int(fsrs.Review), -time.Minute)
 	seedQueueCard(t, db, "ahead", int(fsrs.Learning), 5*time.Minute)
 
-	card, _, err := NewReviewService(db).GetNextDue("deck")
+	card, _, err := NewReviewService(db).GetNextDue("u1", "deck")
 	if err != nil {
 		t.Fatalf("next due: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestGetNextDueReturnsNothingWhenNothingIsDue(t *testing.T) {
 	db := queueDB(t)
 	seedQueueCard(t, db, "tomorrow", int(fsrs.Review), 24*time.Hour)
 
-	card, count, err := NewReviewService(db).GetNextDue("deck")
+	card, count, err := NewReviewService(db).GetNextDue("u1", "deck")
 	if err != nil {
 		t.Fatalf("next due: %v", err)
 	}

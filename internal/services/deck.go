@@ -3,6 +3,7 @@ package services
 import (
 	"database/sql"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/deleyva/recall/internal/models"
@@ -37,19 +38,34 @@ func (s *DeckService) Create(userID, name, description string) (*models.Deck, er
 	}, nil
 }
 
-func (s *DeckService) List(userID string) ([]models.Deck, error) {
+// deckCounts fills in the two computed fields on a deck: how many cards a
+// session would actually serve from it today, and how many are held back as
+// siblings. The due count is capped by the day's study budget — a "Study (5)"
+// that opens onto two cards is the same defect burying and suspension each had.
+func (s *DeckService) deckCounts(userID string, decks []models.Deck) {
+	reviews := NewReviewService(s.db)
+	newLeft, reviewLeft, err := reviews.remainingBudget(userID, time.Local)
+	if err != nil {
+		newLeft, reviewLeft = 0, 0
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
+
+	for i := range decks {
+		decks[i].DueCount = reviews.CappedDueCount(
+			"c.deck_id = ? AND c.suspended = 0 AND (c.buried_until IS NULL OR c.buried_until <= ?)",
+			[]interface{}{decks[i].ID, now}, newLeft, reviewLeft)
+		s.db.QueryRow(`SELECT COUNT(*) FROM cards
+			WHERE deck_id = ? AND suspended = 0 AND buried_until > ?`,
+			decks[i].ID, now).Scan(&decks[i].BuriedCount)
+	}
+}
+
+func (s *DeckService) List(userID string) ([]models.Deck, error) {
 	rows, err := s.db.Query(`
-		SELECT d.id, d.user_id, d.name, d.description, d.created_at,
-			COALESCE((SELECT COUNT(*) FROM cards c WHERE c.deck_id = d.id AND c.due <= ?
-				AND c.suspended = 0
-				AND (c.buried_until IS NULL OR c.buried_until <= ?)), 0) as due_count,
-			COALESCE((SELECT COUNT(*) FROM cards c WHERE c.deck_id = d.id
-				AND c.suspended = 0 AND c.buried_until > ?), 0) as buried_count
-		FROM decks d
-		WHERE d.user_id = ?
-		ORDER BY due_count DESC, d.created_at DESC
-	`, now, now, now, userID)
+		SELECT d.id, d.user_id, d.name, d.description, d.created_at
+		FROM decks d WHERE d.user_id = ?
+		ORDER BY d.created_at DESC
+	`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list decks: %w", err)
 	}
@@ -59,12 +75,20 @@ func (s *DeckService) List(userID string) ([]models.Deck, error) {
 	for rows.Next() {
 		var d models.Deck
 		var createdAt string
-		if err := rows.Scan(&d.ID, &d.UserID, &d.Name, &d.Description, &createdAt, &d.DueCount, &d.BuriedCount); err != nil {
+		if err := rows.Scan(&d.ID, &d.UserID, &d.Name, &d.Description, &createdAt); err != nil {
 			return nil, fmt.Errorf("scan deck: %w", err)
 		}
 		d.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 		decks = append(decks, d)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	s.deckCounts(userID, decks)
+	// Decks with work to do come first, as they did when the count was computed
+	// in SQL.
+	sort.SliceStable(decks, func(i, j int) bool { return decks[i].DueCount > decks[j].DueCount })
 	return decks, nil
 }
 
@@ -72,22 +96,18 @@ func (s *DeckService) Get(userID, deckID string) (*models.Deck, error) {
 	var d models.Deck
 	var createdAt string
 
-	now := time.Now().UTC().Format(time.RFC3339)
 	err := s.db.QueryRow(`
-		SELECT d.id, d.user_id, d.name, d.description, d.created_at,
-			COALESCE((SELECT COUNT(*) FROM cards c WHERE c.deck_id = d.id AND c.due <= ?
-				AND c.suspended = 0
-				AND (c.buried_until IS NULL OR c.buried_until <= ?)), 0) as due_count,
-			COALESCE((SELECT COUNT(*) FROM cards c WHERE c.deck_id = d.id
-				AND c.suspended = 0 AND c.buried_until > ?), 0) as buried_count
-		FROM decks d
-		WHERE d.id = ? AND d.user_id = ?
-	`, now, now, now, deckID, userID).Scan(&d.ID, &d.UserID, &d.Name, &d.Description, &createdAt, &d.DueCount, &d.BuriedCount)
+		SELECT d.id, d.user_id, d.name, d.description, d.created_at
+		FROM decks d WHERE d.id = ? AND d.user_id = ?
+	`, deckID, userID).Scan(&d.ID, &d.UserID, &d.Name, &d.Description, &createdAt)
 	if err != nil {
 		return nil, fmt.Errorf("get deck: %w", err)
 	}
 	d.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	return &d, nil
+
+	one := []models.Deck{d}
+	s.deckCounts(userID, one)
+	return &one[0], nil
 }
 
 func (s *DeckService) Update(userID, deckID, name, description string) error {

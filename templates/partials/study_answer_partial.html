@@ -1,5 +1,6 @@
 {{define "study_answer_partial.html"}}
 {{$suggested := 0}}{{if .Check}}{{$suggested = .Check.SuggestedRating}}{{end}}
+{{$base := printf "/decks/%s/study" .DeckID}}{{if .StudyBase}}{{$base = .StudyBase}}{{end}}
 <div class="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 text-center">
     {{if .Card.IsLeech}}
     <!-- The learner should know this card has a history before answering it:
@@ -43,14 +44,14 @@
     <!-- Edit / Delete actions -->
     <div class="flex justify-end gap-2 mb-4">
         <button
-            hx-get="/decks/{{.DeckID}}/study/{{.Card.ID}}/edit"
+            hx-get="{{$base}}/{{.Card.ID}}/edit"
             hx-target="#study-area"
             hx-swap="innerHTML"
             class="text-sm text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 px-3 py-1 border border-indigo-300 dark:border-indigo-600 rounded">
             Edit
         </button>
         <button
-            hx-delete="/decks/{{.DeckID}}/study/{{.Card.ID}}"
+            hx-delete="{{$base}}/{{.Card.ID}}"
             hx-target="#study-area"
             hx-swap="innerHTML"
             hx-confirm="Delete this card? This cannot be undone."
@@ -60,7 +61,7 @@
     </div>
 
     <div class="grid grid-cols-4 gap-2">
-        <form hx-post="/decks/{{.DeckID}}/study" hx-target="#study-area" hx-swap="innerHTML">
+        <form hx-post="{{$base}}" hx-target="#study-area" hx-swap="innerHTML">
             <input type="hidden" name="card_id" value="{{.Card.ID}}">
             <input type="hidden" name="rating" value="1">
             <button type="submit" {{if eq $suggested 1}}autofocus{{end}} class="w-full bg-red-500 text-white px-3 py-3 rounded-lg hover:bg-red-600 {{if eq $suggested 1}}ring-4 ring-red-300 dark:ring-red-800{{end}}">
@@ -68,7 +69,7 @@
                 <div class="text-xs opacity-80">{{index .Intervals 1}}</div>
             </button>
         </form>
-        <form hx-post="/decks/{{.DeckID}}/study" hx-target="#study-area" hx-swap="innerHTML">
+        <form hx-post="{{$base}}" hx-target="#study-area" hx-swap="innerHTML">
             <input type="hidden" name="card_id" value="{{.Card.ID}}">
             <input type="hidden" name="rating" value="2">
             <button type="submit" {{if eq $suggested 2}}autofocus{{end}} class="w-full bg-orange-500 text-white px-3 py-3 rounded-lg hover:bg-orange-600 {{if eq $suggested 2}}ring-4 ring-orange-300 dark:ring-orange-800{{end}}">
@@ -76,7 +77,7 @@
                 <div class="text-xs opacity-80">{{index .Intervals 2}}</div>
             </button>
         </form>
-        <form hx-post="/decks/{{.DeckID}}/study" hx-target="#study-area" hx-swap="innerHTML">
+        <form hx-post="{{$base}}" hx-target="#study-area" hx-swap="innerHTML">
             <input type="hidden" name="card_id" value="{{.Card.ID}}">
             <input type="hidden" name="rating" value="3">
             <button type="submit" {{if eq $suggested 3}}autofocus{{end}} class="w-full bg-green-500 text-white px-3 py-3 rounded-lg hover:bg-green-600 {{if eq $suggested 3}}ring-4 ring-green-300 dark:ring-green-800{{end}}">
@@ -84,7 +85,7 @@
                 <div class="text-xs opacity-80">{{index .Intervals 3}}</div>
             </button>
         </form>
-        <form hx-post="/decks/{{.DeckID}}/study" hx-target="#study-area" hx-swap="innerHTML">
+        <form hx-post="{{$base}}" hx-target="#study-area" hx-swap="innerHTML">
             <input type="hidden" name="card_id" value="{{.Card.ID}}">
             <input type="hidden" name="rating" value="4">
             <button type="submit" {{if eq $suggested 4}}autofocus{{end}} class="w-full bg-blue-500 text-white px-3 py-3 rounded-lg hover:bg-blue-600 {{if eq $suggested 4}}ring-4 ring-blue-300 dark:ring-blue-800{{end}}">

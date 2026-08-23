@@ -5,11 +5,11 @@ project: recall
 effort: E4
 effort_source: gate-floor
 phase: build
-progress: 62/119
+progress: 68/119
 iteration: 3
 mode: interactive
 started: 2026-08-20T14:30:00Z
-updated: 2026-08-23T13:30:00Z
+updated: 2026-08-23T16:00:00Z
 principal_stated_goal: "usando los datos del artículo, crea un ISA o completa/reelabora el existente para indroducir las novedades que marca el artículo, para cerrar la brecha entre ANKI/Buenas prácticas y Recall"
 principal_stated_goal_source: prompt
 principal_stated_goal_signal: 4
@@ -186,12 +186,12 @@ Also excluded: changing the FSRS library version or upgrading to FSRS-5/6; a con
 
 ### Tags and filtered study
 
-- [ ] ISC-54: Migration adds a tag store allowing many tags per card, storing each tag as a normalized `key` plus its display form, shaped `dominio/tema` at a fixed depth of two with the first segment drawn from a closed list, and applies cleanly on a populated copy. *(restated 2026-08-23 — the `::` free-depth hierarchy was refuted; see Changelog)*
-- [ ] ISC-55: Cards created by the flashcard generator and by the Readeck sync are tagged automatically from their source article, so tags accumulate with no manual step. The generator picks the domain from the closed list and may not invent a first segment — a tag store nobody types into cannot drift.
-- [ ] ISC-56: A backfill assigns at least one tag, derived from the source article, to every existing card that has an `article_id`; cards without one are reported rather than silently skipped.
-- [ ] ISC-57: A study session can be built from a tag filter, a minimum-lapses filter, or both, spanning every deck the user owns, and it never serves another user's card.
-- [ ] ISC-58: A filtered session offers a no-reschedule mode; studying a full session in that mode leaves `due`, `stability`, `difficulty`, `state`, `reps` and `lapses` unchanged for every card served, verified by a row snapshot before and after.
-- [ ] ISC-59: A filtered session in normal mode does reschedule, and a review performed there is written to `review_logs` exactly as one performed in a deck session.
+- [x] ISC-54: Migration adds a tag store allowing many tags per card, storing each tag as a normalized `key` plus its display form, shaped `dominio/tema` at a fixed depth of two with the first segment drawn from a closed list, and applies cleanly on a populated copy. *(restated 2026-08-23 — the `::` free-depth hierarchy was refuted; see Changelog)*
+- [x] ISC-55: Cards created by the flashcard generator and by the Readeck sync are tagged automatically from their source article, so tags accumulate with no manual step. The generator picks the domain from the closed list and may not invent a first segment — a tag store nobody types into cannot drift.
+- [x] ISC-56: A backfill assigns at least one tag, derived from the source article, to every existing card that has an `article_id`; cards without one are reported rather than silently skipped.
+- [x] ISC-57: A study session can be built from a tag filter, a minimum-lapses filter, or both, spanning every deck the user owns, and it never serves another user's card.
+- [x] ISC-58: A filtered session offers a no-reschedule mode; studying a full session in that mode leaves `due`, `stability`, `difficulty`, `state`, `reps` and `lapses` unchanged for every card served, verified by a row snapshot before and after, **and writes no `review_logs` row either**. *(widened mid-run — see Decisions)*
+- [x] ISC-59: A filtered session in normal mode does reschedule, and a review performed there is written to `review_logs` exactly as one performed in a deck session.
 
 ### Leech detection
 
@@ -509,6 +509,15 @@ control covers the single fix.
 - 2026-08-23 13:00: The tag vocabulary is governed by a standard written outside this repo — `LIFEOS/RULES/Tagging.md` — because the same drift recurs across the principal's other surfaces (the Knowledge Archive, Obsidian, Readeck) and a rule that lives in one project's ISA cannot govern the others. This ISA takes a dependency on it: ISC-54 and ISC-55 are restated in its terms.
 - 2026-08-23 13:00: Recall's exposure to tag drift is **structurally near zero**, and noticing that is what unblocked the feature. ISC-55 already says tags are derived from the source article rather than typed, so no human types a tag here. Drift is a property of open vocabularies with human writers; a generator constrained to a closed root cannot produce `agents` one day and `agentes` the next. The standard matters most where the principal types — which is not this application.
 - 2026-08-23 13:00: Tags are stored as a normalized `key` alongside the display form, not as one string. Two tags with the same key are the same tag, which is the whole of the orthographic fix, and it has to live in the schema rather than in a validator so that no write path can bypass it.
+
+- 2026-08-23 16:00: A no-reschedule session writes **nothing at all**, not merely no FSRS columns. ISC-58 as written would have allowed a `review_logs` row, and that row would be worse than a scheduling write: `recall metrics` computes true retention from the review log, so logging cram passes would quietly corrupt the one instrument every outcome claim in this ISA is measured with. The criterion is widened rather than satisfied narrowly.
+- 2026-08-23 16:00: The no-reschedule pass advances by a **cursor**, not by a set of seen cards. Nothing is written in that mode, so a card stays due and would be served forever; ordering by id and remembering the last one served turns the pass into one clean sweep and costs a single string of session state. A growing set of ids in a cookie is a session that breaks at some length nobody tested.
+- 2026-08-23 16:00: Tagging is wired into `CreateBatch` itself rather than into the three generation call sites. The web handler, the API handler and the cron all create cards through it, so none of them can forget, and a fourth call site added later inherits the behaviour instead of needing to remember it.
+- 2026-08-23 16:00: Classification happens **before** the transaction opens. It can be a network call, and a network call inside a write transaction holds the SQLite write lock for as long as the provider feels like taking.
+- 2026-08-23 16:00: One classification per article, not per card, and a sibling's existing tag is reused before the classifier is asked at all. The daily cron runs against the same articles repeatedly; re-classifying would cost a call each time and risk a different answer for one batch.
+- 2026-08-23 16:00: A classification failure leaves the card **untagged and created**, never tagged wrongly. An invented domain is refused by `ValidateTag` before it reaches the database, and the backfill is the thing that exists to find the untagged ones later. The closed root is only closed if failure means "none" rather than "make one up".
+- 2026-08-23 16:00: The uniqueness of a tag key lives in the **schema** — `UNIQUE(user_id, key)` — not in a validator. Two tags with the same key are the same tag, and no write path added later gets a vote on that.
+- 2026-08-23 16:00: The filter travels in the session, not in the URL. The study partials are shared with deck sessions and build their URLs by path; threading a query string through each of them would change the markup a deck session serves, which ISC-42 forbids. The partials learned one optional `StudyBase` instead, which is empty for deck sessions and therefore renders exactly what it rendered before.
 
 ## Changelog
 
@@ -889,6 +898,67 @@ dark mode:
 collection for a while, and that is the correct reading rather than a bug: a
 leech counter counts failures, and failure has only been registered since
 production cards shipped.
+
+### tags-and-filtered-study — 2026-08-23
+
+**ISC-54 / Anti-9 — migration on a populated copy.** Copy staged to version 17,
+then 018 rehearsed alone against it:
+
+```
+staged to version: 17
+after up: 18
+after second up: 18 (idempotent)
+tags: 0, card_tags: 0, existing cards untouched: 11
+duplicate key refused by the schema:
+  UNIQUE constraint failed: tags.user_id, tags.key (2067)
+```
+
+FSRS columns snapshotted across the 017→018 step: `IDENTICAL — no FSRS column
+moved`. The last line is the point of the design: the orthographic fix is a
+schema constraint, and the rehearsal proves it bites rather than trusting the
+validator above it.
+
+**ISC-54…ISC-59 — Go tests.** Seventeen tests across
+`internal/services/tag_test.go` and `internal/handlers/web/filtered_test.go`.
+Five spellings of one tag normalize to one key; the shape is enforced and an
+unknown domain is refused before it reaches the database; three spellings
+converge on one row while the accented display form survives; vocabularies are
+per user; attaching is idempotent. Generated cards are tagged at creation; a
+second batch from the same article reuses the tag and does not re-classify; an
+out-of-list domain leaves the cards created and untagged rather than tagged
+wrongly; the classifier is shown the temas already in use. The backfill dry run
+writes nothing, `--apply` tags every card with a source article, cards without
+one are reported by id, and a second pass finds nothing to do. A filtered session
+selects by tag, by lapse floor, or by both, spans decks, stops at the owner, and
+still honours suspended and buried cards.
+
+**ISC-58 / ISC-59 — end to end in a real browser.** Local instance on a copy,
+three tagged cards across two decks, driven through Interceptor in dark mode.
+
+The picker offers the vocabulary with card counts — `Música/Armonía (2)`,
+`Humanidades/Ilustración (1)` — a lapse floor, and the no-reschedule choice.
+Screenshot viewed.
+
+No-reschedule pass over `musica/armonia`, both cards revealed and graded Good
+through the interface, session ending on **All done!**:
+
+```
+FSRS DIFF across a full no-reschedule session
+  IDENTICAL — the schedule survived a graded pass
+review logs   before: 18   after: 18
+```
+
+The same filter in normal mode, one card graded Good:
+
+```
+k1  due 2026-08-23 → 2026-09-26   stability 4.0 → 36.85   reps 8 → 9
+k2, k3 unchanged
+review logs 18 → 19
+```
+
+**Not closed here.** Nothing. ISC-54…ISC-59 are complete; the vocabulary itself
+starts empty on the real collection and fills as `recall backfill-tags` and the
+generator run.
 
 ### Remaining criteria
 

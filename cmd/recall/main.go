@@ -111,6 +111,50 @@ func main() {
 			}
 			fmt.Printf("User %s is now admin\n", os.Args[2])
 			return
+		case "backfill-tags":
+			if len(os.Args) < 3 {
+				fmt.Println("Usage: recall backfill-tags <email> [--apply]")
+				os.Exit(1)
+			}
+			var userID string
+			if err := db.QueryRow("SELECT id FROM users WHERE email = ?", os.Args[2]).Scan(&userID); err != nil {
+				log.Fatalf("User not found: %s", os.Args[2])
+			}
+			apply := false
+			for _, a := range os.Args[3:] {
+				if a == "--apply" {
+					apply = true
+				} else {
+					log.Fatalf("Unknown argument: %s", a)
+				}
+			}
+			llm := services.NewLLMService(cfg.LLMAPIKey, cfg.LLMAPIURL, cfg.LLMModel, db)
+			report, err := services.NewTagService(db).BackfillTags(userID, llm, apply)
+			if err != nil {
+				log.Fatalf("Failed: %v", err)
+			}
+			mode := "DRY RUN — nothing written. Re-run with --apply."
+			if apply {
+				mode = "APPLIED"
+			}
+			fmt.Printf("\nBACKFILL TAGS — %s\n\n", mode)
+			fmt.Printf("  already tagged: %d\n", report.AlreadyTagged)
+			fmt.Printf("  tagged now:     %d\n", report.Tagged)
+			for tag, n := range report.ByTag {
+				fmt.Printf("    %-40s %d\n", tag, n)
+			}
+			fmt.Printf("\n  no source article, so not taggable from one: %d\n", len(report.NoArticle))
+			for _, id := range report.NoArticle {
+				fmt.Printf("    %s\n", id)
+			}
+			if len(report.Failed) > 0 {
+				fmt.Printf("\n  could not be classified: %d\n", len(report.Failed))
+				for id, reason := range report.Failed {
+					fmt.Printf("    %s — %s\n", id, reason)
+				}
+			}
+			fmt.Println()
+			return
 		case "metrics":
 			if len(os.Args) < 3 {
 				fmt.Println("Usage: recall metrics <email> [--json] [--tz <Zone>]")
@@ -163,6 +207,10 @@ func main() {
 	reviewService := services.NewReviewService(db)
 	articleService := services.NewArticleService(db)
 	llmService := services.NewLLMService(cfg.LLMAPIKey, cfg.LLMAPIURL, cfg.LLMModel, db)
+	tagService := services.NewTagService(db)
+	// Tagging is wired into card creation itself, so all three generation call
+	// sites — cron, web, API — inherit it and none of them can forget.
+	cardService.WithTagging(tagService, llmService)
 	tokenService := services.NewTokenService(db)
 	wikipediaService := services.NewWikipediaService()
 	chatService := services.NewChatService(db)
@@ -195,7 +243,7 @@ func main() {
 	authHandler := web.NewAuthHandler(authService, store, tmpl)
 	deckHandler := web.NewDeckHandler(deckService, reviewService, tmpl)
 	cardHandler := web.NewCardHandler(cardService, deckService, tmpl)
-	reviewHandler := web.NewReviewHandler(reviewService, cardService, deckService, sched, tmpl, store)
+	reviewHandler := web.NewReviewHandler(reviewService, cardService, deckService, sched, tmpl, store).WithTags(tagService)
 	articleHandler := web.NewArticleHandler(articleService, cardService, deckService, llmService, wikipediaService, tmpl, db)
 	chatHandler := web.NewChatHandler(articleService, chatService, llmService, tmpl)
 	podcastHandler := web.NewPodcastHandler(podcastService, articleService, tmpl)
@@ -281,6 +329,15 @@ func main() {
 	auth.DELETE("/decks/:id/study/:cardID", reviewHandler.StudyDeleteCard)
 	auth.POST("/decks/:id/study", reviewHandler.SubmitReview)
 	auth.POST("/decks/:id/unbury", reviewHandler.UnburyDeck)
+	// Cross-deck filtered sessions. Same rules as a deck session; a different
+	// selection of cards, not a different scheduler.
+	auth.GET("/study", reviewHandler.FilteredStudyPage)
+	auth.POST("/study", reviewHandler.FilteredSubmitReview)
+	auth.GET("/study/:cardID/answer", reviewHandler.FilteredShowAnswer)
+	auth.POST("/study/:cardID/answer", reviewHandler.FilteredSubmitAnswer)
+	auth.GET("/study/:cardID/edit", reviewHandler.FilteredEditCard)
+	auth.PUT("/study/:cardID", reviewHandler.FilteredUpdateCard)
+	auth.DELETE("/study/:cardID", reviewHandler.FilteredDeleteCard)
 	auth.GET("/leeches", reviewHandler.LeechesPage)
 	auth.POST("/leeches/:cardID/suspend", reviewHandler.SuspendLeech)
 	auth.POST("/leeches/:cardID/delete", reviewHandler.DeleteLeech)

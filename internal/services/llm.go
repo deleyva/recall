@@ -315,3 +315,56 @@ func parseFlashcardJSON(text string) ([]FlashcardPair, error) {
 	}
 	return valid, nil
 }
+
+// ClassifyArticle picks one `dominio/tema` for an article, from a closed list of
+// domains and — where they exist — the temas already in use under each. Showing
+// the existing leaves is deliberate: it is the machine-writer equivalent of an
+// autocomplete that offers what exists, and it is what stops the model coining
+// a synonym for a tema already in the vocabulary.
+//
+// The reply is one line and nothing else. Validation happens at the call site,
+// which refuses an unknown domain rather than creating one.
+func (s *LLMService) ClassifyArticle(title, content string, domains []string, existing map[string][]string, userID string) (string, error) {
+	content = truncateUTF8(content, 6000)
+
+	var prompt strings.Builder
+	prompt.WriteString("Clasifica este artículo con UNA etiqueta con la forma exacta `dominio/tema`.\n\n")
+	prompt.WriteString("El dominio DEBE ser uno de esta lista cerrada, sin excepción:\n")
+	for _, d := range domains {
+		prompt.WriteString("- " + d + "\n")
+	}
+
+	if len(existing) > 0 {
+		prompt.WriteString("\nTemas que ya existen. Reutiliza uno siempre que encaje, en lugar de inventar un sinónimo:\n")
+		for _, d := range domains {
+			if temas, ok := existing[d]; ok {
+				prompt.WriteString(fmt.Sprintf("- %s: %s\n", d, strings.Join(temas, ", ")))
+			}
+		}
+	}
+
+	prompt.WriteString("\nReglas del tema: en castellano, en minúsculas, sin tildes, una o dos palabras separadas por guion, ")
+	prompt.WriteString("suficientemente general como para que lleguen a caer unos diez artículos debajo. ")
+	prompt.WriteString("Nunca un nombre propio, nunca una fecha ni un siglo, nunca el título del artículo.\n\n")
+	prompt.WriteString("Título: " + title + "\n\nContenido:\n" + content)
+	prompt.WriteString("\n\nResponde SOLO con la etiqueta, en una línea. Sin explicación, sin comillas, sin markdown.")
+
+	messages := []chatMessage{
+		{Role: "system", Content: "Clasificas artículos en un vocabulario controlado. Respondes con una sola línea con la forma dominio/tema y nada más."},
+		{Role: "user", Content: prompt.String()},
+	}
+
+	text, err := s.callLLM(messages, s.ResolveModel(userID))
+	if err != nil {
+		return "", err
+	}
+	// Models like to add prose around a one-line answer; take the first line
+	// that looks like a tag and let ValidateTag judge it.
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(strings.Trim(strings.TrimSpace(line), "`\"'"))
+		if strings.Contains(line, TagSeparator) {
+			return line, nil
+		}
+	}
+	return strings.TrimSpace(text), nil
+}

@@ -95,6 +95,17 @@ type Card struct {
 	Suspended bool `json:"suspended"`
 }
 
+// Tag is one entry in the controlled vocabulary. Key is what two tags are
+// compared on; Display is what a human reads. They differ so that `Música/Teoría`
+// and `musica/teoria` can be one tag with one spelling on screen.
+type Tag struct {
+	ID        string `json:"id"`
+	Key       string `json:"key"`
+	Display   string `json:"display"`
+	Domain    string `json:"domain"`
+	CardCount int    `json:"card_count,omitempty"`
+}
+
 // LeechThreshold is the lapse count at which a card stops being hard and starts
 // being evidence of a badly written card. Eight is Anki's default and the
 // number the SuperMemo formulation rules are argued from.

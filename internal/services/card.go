@@ -13,6 +13,20 @@ import (
 
 type CardService struct {
 	db *sql.DB
+	// tags and classifier are optional. When both are wired, every card born
+	// from an article is tagged at creation, inside the same transaction that
+	// creates it — the three generation call sites cannot forget, because they
+	// are not the ones doing it.
+	tags       *TagService
+	classifier ArticleClassifier
+}
+
+// WithTagging wires automatic tagging into card creation. Left unwired — in
+// tests, in the CLI — cards are created exactly as before.
+func (s *CardService) WithTagging(tags *TagService, classifier ArticleClassifier) *CardService {
+	s.tags = tags
+	s.classifier = classifier
+	return s
 }
 
 // Card kinds. A recognition card reveals its answer when the learner asks for
@@ -63,6 +77,24 @@ type FlashcardPair struct {
 }
 
 func (s *CardService) CreateBatch(deckID string, articleID *string, pairs []FlashcardPair) (int, error) {
+	// Resolve the article's tag before opening the transaction: classification
+	// can be a network call, and a network call inside a write transaction
+	// holds the database lock for as long as the provider feels like taking.
+	tag := ""
+	if s.tags != nil && articleID != nil {
+		userID, err := s.ownerOfDeck(deckID)
+		if err != nil {
+			return 0, err
+		}
+		tag, err = s.tags.TagForArticle(userID, *articleID, s.classifier)
+		if err != nil {
+			// A card that cannot be tagged is still a card worth having. The
+			// miss is reported by the backfill, which is the thing that exists
+			// to find untagged cards.
+			tag = ""
+		}
+	}
+
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, fmt.Errorf("begin transaction: %w", err)
@@ -83,6 +115,15 @@ func (s *CardService) CreateBatch(deckID string, articleID *string, pairs []Flas
 		if err != nil {
 			return count, fmt.Errorf("insert card: %w", err)
 		}
+		if tag != "" {
+			userID, err := s.ownerOfDeck(deckID)
+			if err != nil {
+				return count, err
+			}
+			if err := attachTag(tx, userID, id, tag); err != nil {
+				return count, fmt.Errorf("tag card: %w", err)
+			}
+		}
 		count++
 	}
 
@@ -90,6 +131,16 @@ func (s *CardService) CreateBatch(deckID string, articleID *string, pairs []Flas
 		return 0, fmt.Errorf("commit transaction: %w", err)
 	}
 	return count, nil
+}
+
+// ownerOfDeck resolves the user a deck belongs to. Tagging needs it because a
+// vocabulary is per person, and CreateBatch is only given a deck.
+func (s *CardService) ownerOfDeck(deckID string) (string, error) {
+	var userID string
+	if err := s.db.QueryRow("SELECT user_id FROM decks WHERE id = ?", deckID).Scan(&userID); err != nil {
+		return "", fmt.Errorf("owner of deck: %w", err)
+	}
+	return userID, nil
 }
 
 func (s *CardService) List(deckID string, page, perPage int) ([]models.Card, int, error) {

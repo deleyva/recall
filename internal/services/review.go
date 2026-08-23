@@ -184,3 +184,93 @@ func (s *ReviewService) GetHistory(userID string) ([]models.DailyReviewCount, er
 	}
 	return history, nil
 }
+
+// StudyFilter builds an ad-hoc session across every deck the user owns. It is a
+// presentation-layer object: it changes which cards are offered and in what
+// order, never what the scheduler believes about them.
+type StudyFilter struct {
+	TagKey    string
+	MinLapses int
+	// NoReschedule turns the session into a read-only pass. Nothing is written:
+	// not the FSRS columns, and not a review log either. A log entry with no
+	// scheduling behind it would feed `recall metrics` cram reviews and quietly
+	// corrupt the one instrument the outcome claims are measured with.
+	NoReschedule bool
+	// AfterID is the cursor for a no-reschedule pass. Nothing is written in
+	// that mode, so a card stays due and would be served forever; ordering by
+	// id and remembering the last one turns the pass into one clean sweep, and
+	// costs one string of session state instead of a growing set of ids.
+	AfterID string
+}
+
+func (f StudyFilter) Active() bool { return f.TagKey != "" || f.MinLapses > 0 }
+
+// GetNextFiltered serves the next card matching the filter across every deck the
+// user owns. The queue rules are the deck session's rules — nothing suspended,
+// nothing buried, review cards never pulled forward — because a filtered
+// session is a different selection, not a different scheduler.
+func (s *ReviewService) GetNextFiltered(userID string, f StudyFilter) (*models.Card, int, error) {
+	nowTime := time.Now().UTC()
+	now := nowTime.Format(time.RFC3339)
+	ahead := nowTime.Add(LearnAheadWindow).Format(time.RFC3339)
+
+	where := `
+		d.user_id = ?
+		AND c.suspended = 0
+		AND (c.buried_until IS NULL OR c.buried_until <= ?)
+		AND (c.due <= ? OR (c.state IN (1, 3) AND c.due <= ?))`
+	args := []interface{}{userID, now, now, ahead}
+
+	joins := ""
+	if f.TagKey != "" {
+		joins = `
+			JOIN card_tags ct ON ct.card_id = c.id
+			JOIN tags t ON t.id = ct.tag_id AND t.user_id = d.user_id`
+		where += " AND t.key = ?"
+		args = append(args, f.TagKey)
+	}
+	if f.MinLapses > 0 {
+		where += " AND c.lapses >= ?"
+		args = append(args, f.MinLapses)
+	}
+	if f.NoReschedule && f.AfterID != "" {
+		where += " AND c.id > ?"
+		args = append(args, f.AfterID)
+	}
+
+	var dueCount int
+	if err := s.db.QueryRow(
+		"SELECT COUNT(DISTINCT c.id) FROM cards c JOIN decks d ON d.id = c.deck_id"+joins+" WHERE"+where, args...,
+	).Scan(&dueCount); err != nil {
+		return nil, 0, fmt.Errorf("count filtered: %w", err)
+	}
+	if dueCount == 0 {
+		return nil, 0, nil
+	}
+
+	selectCard := `
+		SELECT c.id, c.deck_id, c.front, c.back, c.due, c.stability, c.difficulty, c.elapsed_days,
+			c.scheduled_days, c.reps, c.lapses, c.state, c.last_review, c.created_at, c.updated_at,
+			c.article_id, c.kind, c.buried_until, c.suspended
+		FROM cards c JOIN decks d ON d.id = c.deck_id` + joins + `
+		WHERE` + where
+
+	var row *sql.Row
+	if f.NoReschedule {
+		row = s.db.QueryRow(selectCard+" ORDER BY c.id ASC LIMIT 1", args...)
+	} else {
+		row = s.db.QueryRow(selectCard+`
+		ORDER BY
+			CASE WHEN c.due <= ? THEN 0 ELSE 1 END ASC,
+			CASE WHEN c.state IN (1, 3) THEN 0 WHEN c.state = 0 THEN 1 ELSE 2 END ASC,
+			c.due ASC
+		LIMIT 1
+	`, append(args, now)...)
+	}
+
+	card, err := scanCardRow(row)
+	if err != nil {
+		return nil, 0, fmt.Errorf("get next filtered: %w", err)
+	}
+	return card, dueCount, nil
+}

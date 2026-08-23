@@ -75,7 +75,7 @@ func newReviewHandler(t *testing.T) (*ReviewHandler, *sql.DB) {
 		scheduler.New(),
 		tmpl,
 		store,
-	)
+	).WithTags(services.NewTagService(db))
 	return h, db
 }
 

@@ -1,0 +1,87 @@
+{{define "study_filtered.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "content"}}
+<div class="max-w-2xl mx-auto">
+{{if .Picker}}
+    <h1 class="text-2xl font-bold mb-2">Build a session</h1>
+    <p class="text-gray-500 dark:text-gray-400 mb-6">
+        Across every deck you own. Pick a topic, a difficulty floor, or both.
+    </p>
+
+    <form method="GET" action="/study" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-5">
+        <div>
+            <label for="tag" class="block text-sm font-medium mb-1">Topic</label>
+            <select id="tag" name="tag"
+                    class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900">
+                <option value="">Any topic</option>
+                {{range .Tags}}
+                <option value="{{.Key}}">{{.Display}} ({{.CardCount}})</option>
+                {{end}}
+            </select>
+            {{if not .Tags}}
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                No tags yet. They arrive on their own as cards are generated from articles.
+            </p>
+            {{end}}
+        </div>
+
+        <div>
+            <label for="min_lapses" class="block text-sm font-medium mb-1">Only cards failed at least</label>
+            <div class="flex items-center gap-2">
+                <input type="number" id="min_lapses" name="min_lapses" min="0" value="0"
+                       class="w-24 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900">
+                <span class="text-sm text-gray-500 dark:text-gray-400">times</span>
+            </div>
+        </div>
+
+        <div class="flex items-start gap-3 pt-1">
+            <input type="checkbox" id="no_reschedule" name="no_reschedule" value="1" class="mt-1">
+            <label for="no_reschedule" class="text-sm">
+                <span class="font-medium">Don't touch the schedule</span>
+                <span class="block text-gray-500 dark:text-gray-400">
+                    A read-only pass. Nothing is written — not the intervals, not the review log —
+                    so drilling before a class cannot wreck the spacing you have earned.
+                </span>
+            </label>
+        </div>
+
+        <button type="submit" class="w-full bg-indigo-600 text-white px-4 py-3 rounded-lg hover:bg-indigo-700">
+            Start
+        </button>
+    </form>
+
+    <a href="/" class="inline-block mt-6 text-indigo-600 hover:underline">&larr; Back to decks</a>
+{{else}}
+    <div class="flex justify-between items-center mb-2">
+        <h1 class="text-2xl font-bold">
+            {{if .Filter.TagKey}}{{.Filter.TagKey}}{{else}}Filtered session{{end}}
+        </h1>
+        <span class="text-gray-500">{{.DueCount}} cards</span>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2 mb-6">
+        {{if gt .Filter.MinLapses 0}}
+        <span class="text-xs px-2 py-1 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300">
+            failed ≥ {{.Filter.MinLapses}} times
+        </span>
+        {{end}}
+        {{if .NoReschedule}}
+        <span class="text-xs font-semibold px-2 py-1 rounded border border-amber-400 dark:border-amber-600 text-amber-800 dark:text-amber-200">
+            Schedule untouched — nothing is being written
+        </span>
+        {{end}}
+        <a href="/study" class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline">change filter</a>
+    </div>
+
+    <div id="study-area">
+        {{if .Done}}
+            {{template "study_done_partial.html" .}}
+        {{else}}
+            {{template "study_card_partial.html" .}}
+        {{end}}
+    </div>
+{{end}}
+</div>
+{{end}}

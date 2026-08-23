@@ -24,9 +24,16 @@ type ReviewHandler struct {
 	reviews   *services.ReviewService
 	cards     *services.CardService
 	decks     *services.DeckService
+	tags      *services.TagService
 	scheduler *scheduler.Scheduler
 	tmpl      *templates.Registry
 	store     sessions.Store
+}
+
+// WithTags gives the handler the vocabulary a filtered session is built from.
+func (h *ReviewHandler) WithTags(tags *services.TagService) *ReviewHandler {
+	h.tags = tags
+	return h
 }
 
 func NewReviewHandler(reviews *services.ReviewService, cards *services.CardService, decks *services.DeckService, sched *scheduler.Scheduler, tmpl *templates.Registry, store sessions.Store) *ReviewHandler {

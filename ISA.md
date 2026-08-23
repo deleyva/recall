@@ -5,11 +5,11 @@ project: recall
 effort: E4
 effort_source: gate-floor
 phase: build
-progress: 68/119
+progress: 71/119
 iteration: 3
 mode: interactive
 started: 2026-08-20T14:30:00Z
-updated: 2026-08-23T16:00:00Z
+updated: 2026-08-23T18:00:00Z
 principal_stated_goal: "usando los datos del artículo, crea un ISA o completa/reelabora el existente para indroducir las novedades que marca el artículo, para cerrar la brecha entre ANKI/Buenas prácticas y Recall"
 principal_stated_goal_source: prompt
 principal_stated_goal_signal: 4
@@ -201,11 +201,11 @@ Also excluded: changing the FSRS library version or upgrading to FSRS-5/6; a con
 
 ### Atomic formulation
 
-- [ ] ISC-63: `DefaultFlashcardPrompt` states the minimum-information principle: one idea per card, an answer of a single element, no enumerations (a source list of N items becomes N cards), no coordinating conjunction in the question, HTML reserved for emphasis rather than list structure.
-- [ ] ISC-64: For any source passage containing a named work, author, or other proper name, the generator emits the pair in both directions — name → claim and claim → name — with the claim → name card marked `kind = production`.
+- [x] ISC-63: `DefaultFlashcardPrompt` states the minimum-information principle: one idea per card, an answer of a single element, no enumerations (a source list of N items becomes N cards), no coordinating conjunction in the question, HTML reserved for emphasis rather than list structure.
+- [ ] ISC-64: For any source passage containing a named work, author, or other proper name, the generator emits the pair in both directions — name → claim and claim → name — with the claim → name card marked `kind = production`. `[DEFERRED-VERIFY]` — the instruction is in the prompt and the `kind` the generator returns is carried through the parser into the column, both proven; the claim is about what a live generation actually emits, and there is no key on this machine to run one. Closes on a generation against the deployed instance, as ISC-32 and ISC-33 did.
 - [ ] ISC-65: Measured by `recall metrics` over cards generated in the 30 days after the prompt change, fewer than 10% of backs contain `<li>` and fewer than 10% of fronts contain a coordinating conjunction.
-- [ ] ISC-66: A splitter tool lists every existing card whose back contains a list or whose front contains a coordinating conjunction, proposes a split into atomic cards, and writes nothing until the operator confirms that specific card.
-- [ ] ISC-67: Running the splitter with no confirmation leaves the card table byte-identical, proven by a checksum of the table before and after a dry run.
+- [x] ISC-66: A splitter tool lists every existing card whose back contains a list or whose front contains a coordinating conjunction, proposes a split into atomic cards, and writes nothing until the operator confirms that specific card.
+- [x] ISC-67: Running the splitter with no confirmation leaves the card table byte-identical, proven by a checksum of the table before and after a dry run.
 
 ### Study load
 
@@ -519,7 +519,19 @@ control covers the single fix.
 - 2026-08-23 16:00: The uniqueness of a tag key lives in the **schema** — `UNIQUE(user_id, key)` — not in a validator. Two tags with the same key are the same tag, and no write path added later gets a vote on that.
 - 2026-08-23 16:00: The filter travels in the session, not in the URL. The study partials are shared with deck sessions and build their URLs by path; threading a query string through each of them would change the markup a deck session serves, which ISC-42 forbids. The partials learned one optional `StudyBase` instead, which is empty for deck sessions and therefore renders exactly what it rendered before.
 
+- 2026-08-23 18:00: The prompt's **example** was the heavier half of the fix. The old one demonstrated a multi-fact back inside `<ul><li>`, and a model copies the shape it is shown far more reliably than it follows a rule it is told. Removing the five list-formatting rules without replacing that example would have changed very little. The new example shows two atomic cards, in Spanish, one of them the reverse direction of the other, one marked production.
+- 2026-08-23 18:00: `FlashcardPair` carries `kind`, and an unrecognised value falls back to recognition rather than being rejected. The generator now judges whether an answer is an arbitrary label; a future model that returns `cloze` or an empty string must not be able to change how a card is asked, and must not lose the card either.
+- 2026-08-23 18:00: A split **suspends** the original rather than deleting it. The original is the operator's own writing, it carries months of scheduling history the new atomic cards do not have, and a suspension is reversible where a delete is not. This reuses the column ISC-62 added two days earlier; the leech list is where it can then be deleted deliberately.
+- 2026-08-23 18:00: The splitter selects with `hasListMarkup` and `hasConjunction`, the same two detectors `recall metrics` counts ISC-65 with. Two implementations of "malformed" would drift apart, and the number being fixed would stop being the number being measured.
+- 2026-08-23 18:00: Applying names **one card id**. There is no bulk apply, not even behind a flag. Anti-8 requires per-card confirmation, and a `--all` that existed would eventually be used at three in the morning.
+
+
 ## Changelog
+
+- **conjectured**: after a split, the atomic cards can be found as "the cards in this deck that have no tag yet", so they can inherit the original's tags without threading ids through the transaction.
+  **refuted by**: the test asserting the untouched cards stayed untouched — `compound` and `fine` were sitting in the same deck with no tags of their own, and the first cut attached the split card's topic to both of them.
+  **learned**: "the rows I just created" is not a property any query over the table can recover after the fact, and a predicate that happens to select them today selects whatever else drifts into that shape tomorrow. The writer has to keep the ids it wrote.
+  **criterion now**: unchanged in wording — ISC-66 already said the splitter writes nothing until the operator confirms *that specific card*, and the defect was a violation of it that the wording had already ruled out. The test that catches it is now the one that asserts non-named cards are untouched, rather than only asserting the named one changed.
 
 - **conjectured**: an Anki-style `::` hierarchy of free depth expressed in the tag name is the right shape for the tag store (ISC-54 as originally written).
   **refuted by**: measuring the principal's existing vocabulary in the Knowledge Archive — 84 notes carrying 61 distinct tags, 29 of them used exactly once. The singletons are not obscure topics; they are the same topics at different depths and in two languages: `agents` beside `agentes`, `architecture` beside `arquitectura`, `deploy`/`docker`/`vps`/`ssh`/`infraestructura` for one subject, and `musica`/`guitarra`/`compositor`/`cancion`/`rock` flattened across five levels of granularity.
@@ -959,6 +971,50 @@ review logs 18 → 19
 **Not closed here.** Nothing. ISC-54…ISC-59 are complete; the vocabulary itself
 starts empty on the real collection and fills as `recall backfill-tags` and the
 generator run.
+
+### atomic-generation — 2026-08-23
+
+**ISC-63 — the prompt.** `DefaultFlashcardPrompt` now opens on minimum
+information and states what follows from it: N items become N cards, no
+coordinating conjunction in a question, the shortest correct answer, `<strong>`
+and `<em>` only with `<ul>`/`<ol>`/`<li>` forbidden outright, and both
+directions for named things. The five consecutive HTML-list rules are gone, and
+so is the JSON example that demonstrated a multi-fact `<ul><li>` back. A test
+asserts both halves: the principle is stated, and none of the four old list
+instructions survives anywhere in the template.
+
+**ISC-64 — carried but not yet observed.** `FlashcardPair` gained `kind`, the
+parser reads it, and `CreateBatch` writes it, with anything unrecognised falling
+back to recognition — proven by a table test over production, recognition,
+absent and invented values. What is not proven is what a live generation emits,
+which is what the criterion is actually about. `[DEFERRED-VERIFY]`, closing on a
+generation run against the deployed instance.
+
+**ISC-66 / ISC-67 — the splitter.** Nine tests. The candidate list is exactly the
+malformed cards and nothing else, keyed on the same two detectors `recall
+metrics` measures with. A dry run leaves the card table byte-identical, proven
+by a SHA-256 over every column of every row before and after a full propose
+pass. Applying names one card: it becomes its atomic parts, the original is
+suspended with its history intact rather than deleted, the atomic cards inherit
+its tags, cards the operator did not name are untouched and pick up nothing, an
+empty proposal is refused rather than suspending the original and leaving
+neither card, and another user's card cannot be split.
+
+Run against a copy of a real database with no LLM key, so the proposals fail and
+the listing has to stand on its own:
+
+```
+CARDS THAT ASK FOR MORE THAN ONE THING — 4
+DRY RUN. Nothing is written. Confirm one card at a time:
+  recall split-cards <email> --apply <cardID>
+
+cards before: 11:2701
+cards after:  11:2701
+CARD TABLE UNCHANGED by the dry run
+```
+
+**Not closed here.** ISC-65 is a 30-day measurement over cards generated after
+the prompt change, and no such card exists yet.
 
 ### Remaining criteria
 

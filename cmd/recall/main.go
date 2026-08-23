@@ -111,6 +111,82 @@ func main() {
 			}
 			fmt.Printf("User %s is now admin\n", os.Args[2])
 			return
+		case "split-cards":
+			if len(os.Args) < 3 {
+				fmt.Println("Usage: recall split-cards <email> [--apply <cardID>]")
+				os.Exit(1)
+			}
+			var userID string
+			if err := db.QueryRow("SELECT id FROM users WHERE email = ?", os.Args[2]).Scan(&userID); err != nil {
+				log.Fatalf("User not found: %s", os.Args[2])
+			}
+			applyID := ""
+			for i := 3; i < len(os.Args); i++ {
+				if os.Args[i] == "--apply" {
+					if i+1 >= len(os.Args) {
+						log.Fatal("--apply needs the id of one card")
+					}
+					i++
+					applyID = os.Args[i]
+				} else {
+					log.Fatalf("Unknown argument: %s", os.Args[i])
+				}
+			}
+
+			llm := services.NewLLMService(cfg.LLMAPIKey, cfg.LLMAPIURL, cfg.LLMModel, db)
+			splits := services.NewSplitService(db)
+			candidates, err := splits.Candidates(userID)
+			if err != nil {
+				log.Fatalf("Failed: %v", err)
+			}
+			if len(candidates) == 0 {
+				fmt.Println("\nNo card asks for more than one thing. Nothing to split.")
+				return
+			}
+
+			if applyID != "" {
+				// One card, named by the operator. Nothing else is touched.
+				for _, c := range candidates {
+					if c.Card.ID != applyID {
+						continue
+					}
+					proposed := splits.Propose(userID, []services.SplitCandidate{c}, llm)[0]
+					if proposed.Err != "" {
+						log.Fatalf("Could not split %s: %s", applyID, proposed.Err)
+					}
+					n, err := splits.Apply(userID, applyID, proposed.Proposed)
+					if err != nil {
+						log.Fatalf("Failed: %v", err)
+					}
+					fmt.Printf("\nSplit %s into %d atomic cards. The original is suspended, not deleted.\n\n", applyID, n)
+					return
+				}
+				log.Fatalf("%s is not one of the cards that needs splitting", applyID)
+			}
+
+			fmt.Printf("\nCARDS THAT ASK FOR MORE THAN ONE THING — %d\n", len(candidates))
+			fmt.Println("\nDRY RUN. Nothing is written. Confirm one card at a time:")
+			fmt.Println("  recall split-cards <email> --apply <cardID>")
+			fmt.Println()
+			for _, c := range splits.Propose(userID, candidates, llm) {
+				fmt.Printf("── %s\n   %s\n", c.Card.ID, c.Reason)
+				fmt.Printf("   Q: %s\n", services.StripHTML(c.Card.Front))
+				fmt.Printf("   A: %s\n", services.StripHTML(c.Card.Back))
+				if c.Err != "" {
+					fmt.Printf("   could not be split: %s\n\n", c.Err)
+					continue
+				}
+				fmt.Printf("   would become %d cards:\n", len(c.Proposed))
+				for _, p := range c.Proposed {
+					kind := ""
+					if p.Kind == services.KindProduction {
+						kind = "  [production]"
+					}
+					fmt.Printf("     · %s → %s%s\n", services.StripHTML(p.Front), services.StripHTML(p.Back), kind)
+				}
+				fmt.Println()
+			}
+			return
 		case "backfill-tags":
 			if len(os.Args) < 3 {
 				fmt.Println("Usage: recall backfill-tags <email> [--apply]")

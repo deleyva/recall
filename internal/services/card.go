@@ -71,9 +71,24 @@ func (s *CardService) Create(deckID, front, back string, articleID *string) (*mo
 	}, nil
 }
 
+// kindOrRecognition keeps an unrecognised value from reaching the column that
+// decides how a card is asked. Silence means recognition, which is the
+// behaviour every existing card already has.
+func kindOrRecognition(kind string) string {
+	if ValidCardKind(kind) {
+		return kind
+	}
+	return KindRecognition
+}
+
 type FlashcardPair struct {
 	Front string `json:"front"`
 	Back  string `json:"back"`
+	// Kind is what the generator judged the answer to be. An arbitrary label —
+	// a name, a title, a date — is a production card, because ISC-70 requires
+	// exactly those to be produced unaided. Anything the generator does not
+	// mark, or marks with a value we do not recognise, stays recognition.
+	Kind string `json:"kind,omitempty"`
 }
 
 func (s *CardService) CreateBatch(deckID string, articleID *string, pairs []FlashcardPair) (int, error) {
@@ -109,9 +124,9 @@ func (s *CardService) CreateBatch(deckID string, articleID *string, pairs []Flas
 		id := generateID()
 		now := time.Now().UTC()
 		_, err = tx.Exec(`
-			INSERT INTO cards (id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, last_review, created_at, updated_at, article_id)
-			VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, '0001-01-01T00:00:00Z', ?, ?, ?)
-		`, id, deckID, p.Front, p.Back, now.Format(time.RFC3339), now.Format(time.RFC3339), now.Format(time.RFC3339), articleID)
+			INSERT INTO cards (id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, last_review, created_at, updated_at, article_id, kind)
+			VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, '0001-01-01T00:00:00Z', ?, ?, ?, ?)
+		`, id, deckID, p.Front, p.Back, now.Format(time.RFC3339), now.Format(time.RFC3339), now.Format(time.RFC3339), articleID, kindOrRecognition(p.Kind))
 		if err != nil {
 			return count, fmt.Errorf("insert card: %w", err)
 		}

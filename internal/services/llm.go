@@ -161,17 +161,18 @@ func truncateUTF8(s string, maxBytes int) string {
 // DefaultFlashcardPrompt is the system default prompt template for flashcard generation.
 // Users can override this via their profile settings.
 // The placeholder {count} is replaced with the number of cards to generate.
-const DefaultFlashcardPrompt = `You are a flashcard generator. Create exactly {count} flashcards from the following article content.
+const DefaultFlashcardPrompt = `You are a flashcard generator. Create exactly {count} flashcards from the article content below.
 
-FORMATTING RULES:
-- The "back" field MUST use HTML formatting for readability.
-- Use <strong> to highlight key terms and important concepts.
-- When listing items without a specific order, use <ul><li>...</li></ul>.
-- When listing items in a specific sequence or ranking, use <ol><li>...</li></ol>.
-- Never use raw numbered text like "1. item". Always use proper HTML list tags.
-- Keep the "front" field as a clear, concise question (plain text, no HTML).
-- CRITICAL: Write both front and back in the SAME LANGUAGE as the article content. If the article is in Spanish, the flashcards must be in Spanish. If in English, in English. Match the article's language exactly.
-- LANGUAGE DETECTION: Before generating any flashcard, detect the language of the article. Then write ALL flashcards entirely in that detected language. NEVER default to English if the article is not in English. Every word of every flashcard — questions and answers — must be in the article's language.`
+THE ONE RULE — MINIMUM INFORMATION: a card asks for one idea, and its answer is one element: a name, a date, a definition, a single claim. A card carrying several facts cannot be failed, only failed in part, and no rating expresses that — so the learner marks it known and the facts they missed are never counted. That silently destroys the measurement the whole system exists to take.
+
+What follows from the rule:
+- A passage listing N items becomes N cards. Never one card with a list.
+- No coordinating conjunction in the question. If the question needs "and", it is two cards.
+- The answer is as short as it can be while still being correct. Prefer a word to a phrase, a phrase to a sentence, a sentence to two.
+- HTML is for emphasis only: <strong> and <em>. Never <ul>, <ol> or <li>. A card whose answer wants a list is a card that has not been split yet.
+- BOTH DIRECTIONS for named things: whenever the article attributes something to a named work, author, place or other proper name, emit two cards — one asking what that name is associated with, and one asking for the name given the association.
+
+LANGUAGE: detect the language of the article first, then write every card entirely in it. Never default to English unless the article is in English.`
 
 func (s *LLMService) GenerateFlashcards(content string, existing []models.Card, count int, customPrompt string, userID string) ([]FlashcardPair, error) {
 	content = truncateUTF8(content, 30000)
@@ -197,7 +198,15 @@ func (s *LLMService) GenerateFlashcards(content string, existing []models.Card, 
 
 	prompt.WriteString("Article content:\n")
 	prompt.WriteString(content)
-	prompt.WriteString("\n\nRespond ONLY with a JSON array of objects with \"front\" and \"back\" keys. No markdown, no explanation. Example: [{\"front\":\"What is X?\",\"back\":\"<strong>X</strong> is a concept that includes:<ul><li>First aspect</li><li>Second aspect</li></ul>\"}]")
+	// The example is load-bearing: models copy the shape they are shown far more
+	// reliably than they follow a rule they are told. The old one demonstrated a
+	// multi-fact back inside <ul><li>, which is the exact card this prompt now
+	// exists to prevent.
+	prompt.WriteString("\n\nRespond ONLY with a JSON array of objects with \"front\", \"back\" and \"kind\" keys. " +
+		"\"kind\" is \"production\" when the answer is a name, title, date or other arbitrary label the learner has to produce unaided; " +
+		"otherwise \"recognition\". No markdown, no explanation. Example: " +
+		"[{\"front\":\"¿Quién escribió el Traité élémentaire de chimie?\",\"back\":\"<strong>Lavoisier</strong>\",\"kind\":\"production\"}," +
+		"{\"front\":\"¿Qué demostró Lavoisier sobre la respiración animal?\",\"back\":\"Que es una <strong>combustión lenta</strong>\",\"kind\":\"recognition\"}]")
 
 	messages := []chatMessage{
 		{Role: "system", Content: "You are a multilingual flashcard generator. CRITICAL: Detect the language of the article content provided and generate ALL output exclusively in that language. If the article is in Spanish, every flashcard must be in Spanish. If in French, in French. NEVER default to English unless the article itself is in English. Respond ONLY with a JSON array."},
@@ -367,4 +376,26 @@ func (s *LLMService) ClassifyArticle(title, content string, domains []string, ex
 		}
 	}
 	return strings.TrimSpace(text), nil
+}
+
+// SplitCard proposes the atomic cards one malformed card should become. It is
+// the same minimum-information rule the generator now works under, applied
+// after the fact to cards written before it existed.
+func (s *LLMService) SplitCard(front, back, userID string) ([]FlashcardPair, error) {
+	var prompt strings.Builder
+	prompt.WriteString(DefaultFlashcardPrompt[:strings.Index(DefaultFlashcardPrompt, "\n\nLANGUAGE:")])
+	prompt.WriteString("\n\nLANGUAGE: write the new cards in the same language as the card below.\n\n")
+	prompt.WriteString("This existing card asks for too much at once. Split it into as many atomic cards as it actually contains — no more, no fewer. Lose nothing that was on it.\n\n")
+	prompt.WriteString("Question: " + front + "\nAnswer: " + back + "\n\n")
+	prompt.WriteString("Respond ONLY with a JSON array of objects with \"front\", \"back\" and \"kind\" keys, as described above. No markdown, no explanation.")
+
+	messages := []chatMessage{
+		{Role: "system", Content: "You split overloaded flashcards into atomic ones. Respond ONLY with a JSON array."},
+		{Role: "user", Content: prompt.String()},
+	}
+	text, err := s.callLLM(messages, s.ResolveModel(userID))
+	if err != nil {
+		return nil, err
+	}
+	return parseFlashcardJSON(text)
 }

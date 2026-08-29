@@ -1167,9 +1167,15 @@ card-production   production  2026-01-01T00:00:00Z  0     0      0.0
 The kind moved and no scheduling column did. The add-card form was confirmed to
 carry the same control, defaulting to recognition.
 
-**Not claimed.** The FSRS-untouched guarantee is proved by the unit test, which
-snapshots a card in a non-zero state; the browser check above ran on new cards,
-whose columns are zero anyway, so on its own it would not have discriminated.
+**ISC-102 — on the deployed instance.** The gap the local check left open is now
+closed against real data. A card in `Review` state was switched to recognition
+from the deck's edit page and switched back, both saves confirmed on the card
+list: the `Asked` column followed each save and the `State` column read `Review`
+throughout. A new card could not have shown this, since its scheduling columns
+are zero in either direction.
+
+**Not claimed.** Nothing here measures whether typing the answer improves
+retention. That is ISC-71 and ISC-73, and they are still open.
 
 ### Remaining criteria
 

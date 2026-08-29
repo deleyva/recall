@@ -223,12 +223,13 @@ func (h *Handler) CreateCard(c echo.Context) error {
 	var req struct {
 		Front string `json:"front"`
 		Back  string `json:"back"`
+		Kind  string `json:"kind"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
-	card, err := h.cards.Create(deckID, req.Front, req.Back, nil)
+	card, err := h.cards.Create(deckID, req.Front, req.Back, nil, req.Kind)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}

@@ -26,6 +26,7 @@
             <tr>
                 <th class="px-4 py-3 text-left text-sm font-medium text-gray-500">Front</th>
                 <th class="px-4 py-3 text-left text-sm font-medium text-gray-500">Back</th>
+                <th class="px-4 py-3 text-left text-sm font-medium text-gray-500">Asked</th>
                 <th class="px-4 py-3 text-left text-sm font-medium text-gray-500">State</th>
                 <th class="px-4 py-3 text-right text-sm font-medium text-gray-500">Actions</th>
             </tr>
@@ -35,6 +36,11 @@
             <tr>
                 <td class="px-4 py-3 text-sm">{{.Front | safeHTML}}</td>
                 <td class="px-4 py-3 text-sm text-gray-600">{{.Back | safeHTML}}</td>
+                <td class="px-4 py-3 text-sm">
+                    {{if eq .Kind "production"}}<span class="text-amber-600">Production</span>
+                    {{else}}<span class="text-gray-500">Recognition</span>
+                    {{end}}
+                </td>
                 <td class="px-4 py-3 text-sm">
                     {{if eq .State 0}}<span class="text-blue-500">New</span>
                     {{else if eq .State 1}}<span class="text-green-500">Learning</span>

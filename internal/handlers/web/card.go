@@ -82,7 +82,7 @@ func (h *CardHandler) CreateCard(c echo.Context) error {
 		return c.Redirect(http.StatusSeeOther, "/decks/"+deckID+"/cards/new?error=Front+and+back+required")
 	}
 
-	h.cards.Create(deckID, front, back, nil)
+	h.cards.Create(deckID, front, back, nil, c.FormValue("kind"))
 
 	// If addAnother flag is set, stay on the new card page
 	if c.FormValue("add_another") == "true" {
@@ -115,6 +115,12 @@ func (h *CardHandler) UpdateCard(c echo.Context) error {
 	back := c.FormValue("back")
 
 	h.cards.UpdateForUser(cardID, userID, front, back)
+	// The kind is a separate write on purpose: SetKindForUser touches no FSRS
+	// column, so switching how a card is asked keeps the schedule it earned.
+	// A form posted without the field leaves the card's kind alone.
+	if kind := c.FormValue("kind"); services.ValidCardKind(kind) {
+		h.cards.SetKindForUser(cardID, userID, kind)
+	}
 	return c.Redirect(http.StatusSeeOther, "/decks/"+deckID+"/cards")
 }
 

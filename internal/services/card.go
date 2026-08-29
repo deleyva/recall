@@ -47,14 +47,18 @@ func NewCardService(db *sql.DB) *CardService {
 	return &CardService{db: db}
 }
 
-func (s *CardService) Create(deckID, front, back string, articleID *string) (*models.Card, error) {
+// Create adds a single card. kind says how it is asked; anything we do not
+// recognise — including the empty string a caller that does not care sends —
+// becomes recognition, the same default CreateBatch applies.
+func (s *CardService) Create(deckID, front, back string, articleID *string, kind string) (*models.Card, error) {
 	id := generateID()
 	now := time.Now().UTC()
+	kind = kindOrRecognition(kind)
 
 	_, err := s.db.Exec(`
-		INSERT INTO cards (id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, last_review, created_at, updated_at, article_id)
-		VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, '0001-01-01T00:00:00Z', ?, ?, ?)
-	`, id, deckID, front, back, now.Format(time.RFC3339), now.Format(time.RFC3339), now.Format(time.RFC3339), articleID)
+		INSERT INTO cards (id, deck_id, front, back, due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, last_review, created_at, updated_at, article_id, kind)
+		VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, '0001-01-01T00:00:00Z', ?, ?, ?, ?)
+	`, id, deckID, front, back, now.Format(time.RFC3339), now.Format(time.RFC3339), now.Format(time.RFC3339), articleID, kind)
 	if err != nil {
 		return nil, fmt.Errorf("create card: %w", err)
 	}
@@ -65,6 +69,7 @@ func (s *CardService) Create(deckID, front, back string, articleID *string) (*mo
 		ArticleID: articleID,
 		Front:     front,
 		Back:      back,
+		Kind:      kind,
 		Due:       now,
 		CreatedAt: now,
 		UpdatedAt: now,

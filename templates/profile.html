@@ -30,7 +30,7 @@
             <label class="flex items-center gap-3 cursor-pointer">
                 <input type="checkbox" name="flashcard_gen_enabled" {{if .FlashcardGenEnabled}}checked{{end}}
                     class="rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
-                <span class="text-sm font-medium text-gray-700">Auto-generate flashcards</span>
+                <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Auto-generate flashcards</span>
             </label>
             <p class="text-xs text-gray-500 mt-1 ml-7">Generate new flashcards nightly from your reading list.</p>
         </div>
@@ -67,14 +67,14 @@
         </div>
 
         <div>
-            <label for="flashcard_prompt" class="block text-sm font-medium text-gray-700 mb-1">Flashcard Generation Prompt</label>
+            <label for="flashcard_prompt" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Flashcard Generation Prompt</label>
             <textarea name="flashcard_prompt" id="flashcard_prompt" rows="8"
                 class="w-full rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">{{.FlashcardPrompt}}</textarea>
             <p class="text-xs text-gray-500 mt-1">Controls how AI generates flashcards. Use <code class="bg-gray-100 px-1 py-0.5 rounded">{count}</code> as placeholder for the number of cards.{{if .IsDefaultPrompt}} Currently using system default.{{end}}</p>
         </div>
 
         <div>
-            <label for="llm_model" class="block text-sm font-medium text-gray-700 mb-1">AI Model</label>
+            <label for="llm_model" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">AI Model</label>
             <input type="text" name="llm_model" id="llm_model" value="{{.LLMModel}}" placeholder="openai/gpt-oss-120b"
                 class="w-full rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
             <p class="text-xs text-gray-500 mt-1">Model used for flashcard generation and article chat. Leave empty to use the server default. Currently generating with <code class="bg-gray-100 px-1 py-0.5 rounded">{{.LLMModelEffective}}</code>. If your provider retires a model, change it here — no redeploy needed.</p>
@@ -87,12 +87,12 @@
             <p class="text-sm text-gray-500 mb-4">Tag an article with <code class="bg-gray-100 px-1.5 py-0.5 rounded text-xs">recall</code> in Readeck and it will be automatically imported every 15 minutes.</p>
             <div class="space-y-3">
                 <div>
-                    <label for="readeck_url" class="block text-sm font-medium text-gray-700 mb-1">Readeck URL</label>
+                    <label for="readeck_url" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Readeck URL</label>
                     <input type="url" name="readeck_url" id="readeck_url" value="{{.ReadeckURL}}" placeholder="https://readeck.example.com"
                         class="w-full max-w-md rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 </div>
                 <div>
-                    <label for="readeck_api_token" class="block text-sm font-medium text-gray-700 mb-1">Readeck API Token</label>
+                    <label for="readeck_api_token" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Readeck API Token</label>
                     <input type="password" name="readeck_api_token" id="readeck_api_token" value="{{.ReadeckToken}}" placeholder="Bearer token from Readeck"
                         class="w-full max-w-md rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 </div>
@@ -107,7 +107,7 @@
             <label class="flex items-center gap-3 cursor-pointer">
                 <input type="checkbox" name="podcast_enabled" {{if .PodcastEnabled}}checked{{end}}
                     class="rounded border-gray-300 dark:border-gray-600 text-indigo-600 focus:ring-indigo-500">
-                <span class="text-sm text-gray-700">Auto-generate daily podcast from new articles</span>
+                <span class="text-sm text-gray-700 dark:text-gray-300">Auto-generate daily podcast from new articles</span>
             </label>
             <p class="text-xs text-gray-500 mt-1 ml-7">A podcast will be queued daily from articles added in the last 24 hours.</p>
         </div>

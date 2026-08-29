@@ -5,11 +5,11 @@ project: recall
 effort: E4
 effort_source: gate-floor
 phase: build
-progress: 73/119
+progress: 74/120
 iteration: 3
 mode: interactive
 started: 2026-08-20T14:30:00Z
-updated: 2026-08-23T22:15:00Z
+updated: 2026-08-29T14:30:00Z
 principal_stated_goal: "usando los datos del artículo, crea un ISA o completa/reelabora el existente para indroducir las novedades que marca el artículo, para cerrar la brecha entre ANKI/Buenas prácticas y Recall"
 principal_stated_goal_source: prompt
 principal_stated_goal_signal: 4
@@ -28,7 +28,9 @@ interview_invoked: false
 > reader / API run, ISC-26…ISC-35 to the runtime LLM-model run; both record
 > current state. ISC-36…ISC-75 is the memory-fidelity work, in progress.
 > ISC-76…ISC-85 and ISC-86…ISC-101 are specified but not started — see
-> `queued_runs` in the frontmatter for the gate.
+> `queued_runs` in the frontmatter for the gate. ISC-102 onward records work that
+> arrived after the queued runs were specified, so it sits outside the bands
+> rather than renumbering them.
 >
 > **This file is public** (`github.com/deleyva/recall`). No operator usage statistics,
 > no host, user, port or absolute home paths — thresholds here are product targets,
@@ -165,6 +167,7 @@ Also excluded: changing the FSRS library version or upgrading to FSRS-5/6; a con
 - [x] ISC-41: When the comparison finds no match, the answer view presents `Again` as the pre-selected rating; when it matches, `Good` is pre-selected. The learner can always override.
 - [x] ISC-42: A `recognition` card's study flow is byte-for-byte the flow that exists today — no input box, no comparison, no change in served markup.
 - [x] ISC-43: The reveal is server-side: a request that skips the submit step cannot obtain the `back` of a `production` card for the card currently in play.
+- [x] ISC-102: A card's `kind` is changeable wherever a card is edited by hand — the deck's card edit page and the add-card form, not only the study-session edit form — and the card list states each card's kind without opening it. Switching leaves every FSRS column untouched; an edit posted without the field leaves the kind alone; an unrecognised value is refused rather than written. *(added 2026-08-29 — ISC-70 requires a collection whose arbitrary-label answers are all `production`, and until now that could only be maintained from inside a session.)*
 
 ### Sibling burying
 
@@ -368,6 +371,7 @@ control covers the single fix.
 | ISC-71 | measurement | `recall metrics` at day 60 | 75% ≤ retention ≤ 90% | SELECT | Goal |
 | ISC-72 | measurement | rating distribution + next-review-after-rating query | Hard < 10%; Hard→Again ≥ 2× Good→Again | SELECT | Goal |
 | ISC-73 | experiential | ten random production title cards, unaided, answers recorded before reveal | ≥ 8 produced | manual, logged | Vision |
+| ISC-102 | web/UI + unit | switch a card's kind from the deck edit page; save an edit carrying no kind; post an unknown kind | kind changes and FSRS columns identical; kind unchanged; value refused | go test + Chrome | ISC-70 |
 | Anti-7 | file+config | grep the scheduler and repo for optimizer/weight/retention changes | none present | Grep | Out of Scope |
 | Anti-8 | cli | drive every bulk tool without confirming | zero writes | sqlite3 checksum | Principles |
 | Anti-9 | schema | column snapshot diff per migration | identical FSRS columns | sqlite3 + cmp | Constraints |
@@ -531,6 +535,9 @@ control covers the single fix.
 - 2026-08-23 20:00: Learning and relearning cards are exempt from both limits. A limit bounds how much load is taken on; a card mid-loop is load already taken on, and refusing to finish it strands exactly the re-retrieval ISC-51 and ISC-74 restored.
 - 2026-08-23 20:00: Zero means none today, not unlimited. It is the honest reading of the number and it makes "no new cards while I catch up" expressible, which is the setting a learner with a backlog actually wants.
 - 2026-08-23 20:00: The limits are per user, so `GetNextDue` now takes a user id. The signature change touches four call sites and is worth it: deriving the owner from the deck inside the query would have hidden the fact that the budget is global while the queue is per deck.
+
+- 2026-08-29 14:30: Changing a card's kind stays a **separate write** — `SetKindForUser`, not a column added to `UpdateForUser`. The two edits answer to different rules: the text of a card is whatever the operator last typed, while the kind must never move a scheduling column, and folding them into one UPDATE would make that guarantee a property of a statement rather than of a named method the tests can point at.
+- 2026-08-29 14:30: A form posted **without** a kind leaves the kind alone rather than defaulting it. The alternative — treat a missing field as `recognition` — turns every wording fix made from a client that does not send the field into a silent reclassification, and a production card quietly demoted to recognition is exactly the failure ISC-70 exists to prevent, with nothing in the interface to show it happened.
 
 ## Changelog
 
@@ -1126,6 +1133,43 @@ fronts with a conjunction 31.9%. The retention figure sits above the 95% ceiling
 ISC-71 names as evidence the instrument is still measuring recognition, which is
 the expected reading — almost every review in the log predates production cards.
 These are the numbers the 30- and 60-day claims will be compared against.
+
+### card-kind-editing — 2026-08-29
+
+**Why it was needed.** ISC-70 asks for a collection in which every arbitrary-label
+answer is a `production` card. The only control that set `kind` lived in the
+study-session edit partial, so maintaining that property meant meeting the card
+in a session first — and a card cannot be forced to the front of the queue. The
+operator hit this directly: a card was reclassified by calling the study endpoint
+by hand, and the change could not then be seen on the study screen at all.
+
+**ISC-102 — Go tests.** Five, in `internal/handlers/web/card_kind_test.go`. The
+deck's edit page carries the control with the card's current kind pre-selected;
+saving with `kind=production` switches the card and leaves `due`, `reps`, `state`
+and `stability` identical; a save carrying no kind field changes the text and
+leaves the kind at `production`; a posted `cloze` is ignored rather than written;
+and a card added through the add-card form lands as `production` when that is
+what was chosen. Full suite green across all four packages, `go vet` clean.
+
+**ISC-102 — real browser.** A throwaway instance on a scratch database, driven in
+Chrome. The card list rendered the new `Asked` column with one `Recognition` and
+one `Production` row. The edit page for the recognition card showed the selector
+with `Recognition — reveal the answer and grade yourself` pre-selected; switching
+it to Production and saving returned to the list with that row now reading
+`Production`. Read back from SQLite afterwards:
+
+```
+id                kind        due                   reps  state  stability
+card-recognition  production  2026-01-01T00:00:00Z  0     0      0.0
+card-production   production  2026-01-01T00:00:00Z  0     0      0.0
+```
+
+The kind moved and no scheduling column did. The add-card form was confirmed to
+carry the same control, defaulting to recognition.
+
+**Not claimed.** The FSRS-untouched guarantee is proved by the unit test, which
+snapshots a card in a non-zero state; the browser check above ran on new cards,
+whose columns are zero anyway, so on its own it would not have discriminated.
 
 ### Remaining criteria
 

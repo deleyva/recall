@@ -233,6 +233,15 @@ Also excluded: changing the FSRS library version or upgrading to FSRS-5/6; a con
 
 ### Legibility, palette and e-ink *(queued — run 4; not started. Goal: "me gustaría que fuera una aplicación minimalista en la que los colores fueran algo pastel y se viese lo mejor posible en un dispositivo de tinta electrónica con mucho contraste")*
 
+**Finding from 2026-08-29, before this run starts.** The dark theme had a whole
+class of unreadable text: the base layout patches inputs, textareas and selects
+in one CSS rule, but nothing ever covered the labels above them, so every
+`text-gray-700` label rendered as near-black on a gray-900 page across ten
+templates. Fixed there and then, since it was illegible rather than merely
+unpolished. The lesson for this run is that a cross-cutting theme rule which
+enumerates element types will silently miss whichever type nobody thought of;
+the palette work should assert legibility per surface, not per element.
+
 Target device is an Android e-ink tablet with a real browser, so the app is
 rendered on the panel rather than exported to it. The two halves of the request
 pull against each other — pastels are high-value, low-saturation colours, and a

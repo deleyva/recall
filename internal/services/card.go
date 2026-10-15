@@ -361,6 +361,9 @@ func nextDayBoundary(now time.Time, loc *time.Location) time.Time {
 //     for this session and does not need hiding.
 //   - Only cards in decks owned by userID are touched. A write path is a place
 //     to leak just as much as a read path is.
+//   - A deck the learner unburied today is left alone until midnight. The
+//     learner asked for the whole batch; burying it again one answer later
+//     is the defect UnburyDeck's hold exists to remove.
 //
 // It writes buried_until and nothing else — not even updated_at. Burying is
 // presentation, not a change to the card.
@@ -378,7 +381,8 @@ func (s *CardService) BurySiblings(cardID, userID string, now time.Time, loc *ti
 		  AND suspended = 0
 		  AND due <= ?
 		  AND (buried_until IS NULL OR buried_until < ?)
-	`, boundary, cardID, cardID, userID, nowStr, boundary)
+		  AND deck_id NOT IN (SELECT id FROM decks WHERE unburied_until IS NOT NULL AND unburied_until > ?)
+	`, boundary, cardID, cardID, userID, nowStr, boundary, nowStr)
 	if err != nil {
 		return 0, fmt.Errorf("bury siblings: %w", err)
 	}
@@ -443,7 +447,23 @@ func (s *CardService) SetSuspendedForUser(cardID, userID string, suspended bool)
 // UnburyDeck clears every bury in one deck, so a learner who wants the whole
 // batch now can have it. Like burying, it touches no FSRS column: the cards
 // come back with exactly the schedule they had.
-func (s *CardService) UnburyDeck(deckID, userID string) (int, error) {
+//
+// The decision holds until the learner's next local midnight, recorded on the
+// deck as unburied_until. Without that, the unbury lasted exactly one answer:
+// the first card graded buried the rest of the batch again, and "study them
+// now" delivered one card. The hold is the same shape as the bury it cancels —
+// scoped to today, expiring on its own — so tomorrow's siblings are held back
+// as before. The deck update is scoped to the owner, so naming another user's
+// deck writes nothing.
+func (s *CardService) UnburyDeck(deckID, userID string, now time.Time, loc *time.Location) (int, error) {
+	boundary := nextDayBoundary(now, loc).UTC().Format(time.RFC3339)
+
+	if _, err := s.db.Exec(`
+		UPDATE decks SET unburied_until = ?
+		WHERE id = ? AND user_id = ?
+	`, boundary, deckID, userID); err != nil {
+		return 0, fmt.Errorf("unbury deck: %w", err)
+	}
 	result, err := s.db.Exec(`
 		UPDATE cards SET buried_until = NULL
 		WHERE deck_id = ?

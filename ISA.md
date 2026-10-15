@@ -168,6 +168,7 @@ Also excluded: changing the FSRS library version or upgrading to FSRS-5/6; a con
 - [x] ISC-42: A `recognition` card's study flow is byte-for-byte the flow that exists today — no input box, no comparison, no change in served markup.
 - [x] ISC-43: The reveal is server-side: a request that skips the submit step cannot obtain the `back` of a `production` card for the card currently in play.
 - [x] ISC-102: A card's `kind` is changeable wherever a card is edited by hand — the deck's card edit page and the add-card form, not only the study-session edit form — and the card list states each card's kind without opening it. Switching leaves every FSRS column untouched; an edit posted without the field leaves the kind alone; an unrecognised value is refused rather than written. *(added 2026-08-29 — ISC-70 requires a collection whose arbitrary-label answers are all `production`, and until now that could only be maintained from inside a session.)*
+- [ ] ISC-103: Releasing a deck's held-back cards ("Study them now") holds the sibling bury off for that deck until the learner's next local midnight, so a session started from it serves every released card, not one; the control opens the session directly instead of returning to the deck page; the hold expires on its own the next day and never crosses a deck or an owner. *(added 2026-10-15 — the unbury cleared `buried_until` and the first answer buried the batch again: two clicks, one card. Reported by the operator from a learner's account.)* Unit legs closed by `go test` (see Verification); the browser leg is `[DEFERRED-VERIFY]` until the fix is deployed and the session opened in real Chrome.
 
 ### Sibling burying
 
@@ -381,6 +382,7 @@ control covers the single fix.
 | ISC-72 | measurement | rating distribution + next-review-after-rating query | Hard < 10%; Hard→Again ≥ 2× Good→Again | SELECT | Goal |
 | ISC-73 | experiential | ten random production title cards, unaided, answers recorded before reveal | ≥ 8 produced | manual, logged | Vision |
 | ISC-102 | web/UI + unit | switch a card's kind from the deck edit page; save an edit carrying no kind; post an unknown kind | kind changes and FSRS columns identical; kind unchanged; value refused | go test + Chrome | ISC-70 |
+| ISC-103 | web/UI + unit | bury by answering, unbury, answer one card; same at day+1; unbury one deck and answer in another | next sibling served and not re-buried; buried again tomorrow; other deck still buries | go test + Chrome | ISC-48 |
 | Anti-7 | file+config | grep the scheduler and repo for optimizer/weight/retention changes | none present | Grep | Out of Scope |
 | Anti-8 | cli | drive every bulk tool without confirming | zero writes | sqlite3 checksum | Principles |
 | Anti-9 | schema | column snapshot diff per migration | identical FSRS columns | sqlite3 + cmp | Constraints |
@@ -452,6 +454,7 @@ control covers the single fix.
 | media-authoring | Attach controls in the card editor, bulk folder importer with confirm-first proposal, media GC dry-run | ISC-94, ISC-95, ISC-98 | field-sanitizer | no |
 | media-study | Image fronts default to production, typed comparison unchanged, audio behind an explicit control and behind the reveal gate when it is the answer | ISC-96, ISC-97 | field-sanitizer | no |
 | media-verify | Backup restore proof, on-device image legibility check, metrics split for media cards | ISC-99…ISC-101, Anti-17 | media-authoring, media-study | no |
+| unbury-hold | Migration 020 (`decks.unburied_until`), `UnburyDeck` records the day's hold, `BurySiblings` skips held decks, unbury control opens the session | ISC-103 | bury-siblings | no |
 
 ## Decisions
 
@@ -548,6 +551,9 @@ control covers the single fix.
 - 2026-08-29 14:30: Changing a card's kind stays a **separate write** — `SetKindForUser`, not a column added to `UpdateForUser`. The two edits answer to different rules: the text of a card is whatever the operator last typed, while the kind must never move a scheduling column, and folding them into one UPDATE would make that guarantee a property of a statement rather than of a named method the tests can point at.
 - 2026-08-29 14:30: A form posted **without** a kind leaves the kind alone rather than defaulting it. The alternative — treat a missing field as `recognition` — turns every wording fix made from a client that does not send the field into a silent reclassification, and a production card quietly demoted to recognition is exactly the failure ISC-70 exists to prevent, with nothing in the interface to show it happened.
 
+- 2026-10-15 23:20: The hold lives on the deck (`decks.unburied_until`), not on the cards and not in the session. On the cards, the only candidate was a sentinel in `buried_until`, which never expires and would silently exempt the batch from burying forever; in the session, the API study flow and the filtered session would not see it and would bury around it. A deck column with the same shape as the bury it cancels — next local midnight, presentation-only — expires on its own and is read by every caller of `BurySiblings` at once.
+- 2026-10-15 23:20: Migration numbered 020 from the repo, not from the deployed `goose_db_version`: the NAS did not answer over SSH this session. The tree is level with origin/main and 019 is the highest file, so the number cannot collide; the populated-copy rehearsal the Test Strategy requires is deferred until the NAS is reachable, and is listed as such in Verification.
+
 ## Changelog
 
 - **conjectured**: filtering the queue's state list by the day's remaining budget enforces the study limits — with two new cards left, allow state 0; with none, do not.
@@ -594,6 +600,11 @@ control covers the single fix.
   **refuted by**: reading the library before writing the test — `go-fsrs` seeds its PRNG from `fmt.Sprintf("%d_%d_%f", now.Unix(), reps, difficulty*stability)`. Identical state at an identical second is an identical seed, so the fuzz is identical too. The claim was not merely unproven, it was false.
   **learned**: fuzz disperses along the axes that actually differ between cards — review second, repetition count, and difficulty × stability — not along card identity. Two cards genuinely alike in all three are indistinguishable to the scheduler by construction, and after a card's first review no two cards stay alike in all three. The claim had assumed a mechanism the library never offered.
   **criterion now**: ISC-50 asserts dispersion of the interval itself — a sweep of review seconds over one card state yields more than one distinct interval, all inside the library's documented `FUZZ_RANGES`, where the same sweep with fuzz off collapses to exactly one.
+
+- **conjectured**: ISC-48 was closed — "after using it the previously buried cards are served again in the same session" — because the browser pass saw the unburied cards served.
+  **refuted by**: the operator, from a learner's account: unbury, answer one card, session over. The browser pass had unburied and *looked*, not unburied and *answered*; `SubmitReview` ran `BurySiblings` as on any answer and the released batch went straight back under.
+  **learned**: a control that cancels a default has to cancel it for as long as the learner meant, and the learner meant the day. "Served again" was true for one card and the criterion did not say how many. A test that stops at the first observation closes on the state the mechanism produces before it undoes itself.
+  **criterion now**: ISC-103 names the sequence (unbury, answer, next sibling) and the two boundaries (midnight, deck). The handler test runs that sequence and fails on the pre-fix code with the operator's exact symptom.
 
 ## Verification
 
@@ -1185,6 +1196,45 @@ are zero in either direction.
 
 **Not claimed.** Nothing here measures whether typing the answer improves
 retention. That is ISC-71 and ISC-73, and they are still open.
+
+### unbury-hold — 2026-10-15
+
+**Why it was needed.** The operator reported, from a learner's account, that
+"Study them now" took two clicks and then served one card. Read against the
+code: `UnburyDeck` cleared `buried_until`, the deck page offered Study (N), the
+first `SubmitReview` called `BurySiblings` and the batch went back under. The
+mechanism worked exactly as written; it was never told the learner's decision
+outlived one answer.
+
+**Reproduction, pre-fix.** `TestUnburyThenAnswerServesTheNextSibling`
+(`internal/handlers/web/unbury_hold_handler_test.go`) run against the stashed
+original tree:
+
+```
+--- FAIL: TestUnburyThenAnswerServesTheNextSibling
+    the sibling was buried again by the first answer after the learner asked for the whole batch
+    the session ended after one card
+```
+
+The browser reproduction is deferred: the operator's Chrome had no Recall
+session open and the DA does not enter credentials.
+
+**ISC-103 — Go tests, post-fix.** Three in `internal/services/unbury_hold_test.go`
+and one in the handler package. Unbury, then answer: zero siblings buried, the
+third card still unburied, `GetNextDue` serves with count 3. The same unbury
+probed at next-midnight-plus-one-hour buries again. A hold on `deck` leaves
+`deck2` and another user's `otherdeck` burying as before, and naming another
+user's deck writes no hold. `TestUnburyRouteClearsTheDeck` updated: the route
+now redirects to `/decks/:id/study`. Full suite: `go build`, `go vet`, `go test
+./...` all green.
+
+**Migration 020.** Applied by every test through `goose.Up` on a fresh schema.
+`[DEFERRED-VERIFY]` the populated-copy rehearsal and the idempotent second `up`:
+no local copy of the deployed database exists and the NAS did not answer over
+SSH this session.
+
+**Open.** Deploy, then the browser leg of ISC-103 from a real session: unbury,
+answer, see the next sibling.
 
 ### Remaining criteria
 

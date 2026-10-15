@@ -202,7 +202,7 @@ func TestUnburyDeckRestoresOnlyThatDeck(t *testing.T) {
 	mustExec(t, db, "UPDATE cards SET buried_until = ?", future)
 
 	cards := NewCardService(db)
-	unburied, err := cards.UnburyDeck("deck", "u1")
+	unburied, err := cards.UnburyDeck("deck", "u1", time.Now().UTC(), time.Local)
 	if err != nil {
 		t.Fatalf("unbury: %v", err)
 	}
@@ -230,7 +230,7 @@ func TestUnburyDeckRestoresOnlyThatDeck(t *testing.T) {
 	}
 
 	// Another user's deck must not be reachable by naming it.
-	if n, err := cards.UnburyDeck("otherdeck", "u1"); err != nil || n != 0 {
+	if n, err := cards.UnburyDeck("otherdeck", "u1", time.Now().UTC(), time.Local); err != nil || n != 0 {
 		t.Fatalf("unburied %d rows of another user's deck (err=%v)", n, err)
 	}
 }

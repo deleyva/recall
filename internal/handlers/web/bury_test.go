@@ -82,7 +82,8 @@ func TestSubmitReviewBuriesTheRestOfTheBatch(t *testing.T) {
 	}
 }
 
-// ISC-48 — the unbury route clears the deck and sends the learner back to it.
+// ISC-48 / ISC-103 — the unbury route clears the deck and opens the session:
+// the learner asked to study, so the next page is the first card, not the deck.
 func TestUnburyRouteClearsTheDeck(t *testing.T) {
 	h, db := newReviewHandler(t)
 	seedSiblings(t, db)
@@ -100,8 +101,8 @@ func TestUnburyRouteClearsTheDeck(t *testing.T) {
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("status %d, want 303", rec.Code)
 	}
-	if got := rec.Header().Get("Location"); got != "/decks/"+testDeckID {
-		t.Errorf("redirected to %q, want the deck page", got)
+	if got := rec.Header().Get("Location"); got != "/decks/"+testDeckID+"/study" {
+		t.Errorf("redirected to %q, want the study session", got)
 	}
 	if buriedAt(t, db, siblingB) != nil {
 		t.Error("the card is still buried after unburying the deck")

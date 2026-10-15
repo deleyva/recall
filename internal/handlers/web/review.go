@@ -293,10 +293,11 @@ func (h *ReviewHandler) StudyDeleteCard(c echo.Context) error {
 	return h.renderNextCardOrDone(c.Response(), userID, deckID)
 }
 
-// UnburyDeck clears every bury in the deck. Burying is a default, not a
-// verdict: a learner who wants the whole batch now — cramming before a class,
-// finishing a topic in one sitting — gets it back with one click, and the cards
-// return carrying the exact schedule they left with.
+// UnburyDeck clears every bury in the deck and holds the bury off for the rest
+// of the learner's day. Burying is a default, not a verdict: a learner who wants
+// the whole batch now — cramming before a class, finishing a topic in one
+// sitting — gets it back with one click, and the cards return carrying the
+// exact schedule they left with.
 func (h *ReviewHandler) UnburyDeck(c echo.Context) error {
 	userID := middleware.GetUserID(c)
 	deckID := c.Param("id")
@@ -304,10 +305,11 @@ func (h *ReviewHandler) UnburyDeck(c echo.Context) error {
 	if _, err := h.decks.Get(userID, deckID); err != nil {
 		return c.Redirect(http.StatusSeeOther, "/")
 	}
-	if _, err := h.cards.UnburyDeck(deckID, userID); err != nil {
+	if _, err := h.cards.UnburyDeck(deckID, userID, time.Now().UTC(), time.Local); err != nil {
 		return err
 	}
-	return c.Redirect(http.StatusSeeOther, "/decks/"+deckID)
+	// One click, not two: the learner asked to study, so open the session.
+	return c.Redirect(http.StatusSeeOther, "/decks/"+deckID+"/study")
 }
 
 // LeechesPage lists the cards that keep failing. A card at eight lapses is not
